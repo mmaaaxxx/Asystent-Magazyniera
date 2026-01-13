@@ -1,6 +1,6 @@
 {
-  "name": "Copy of Asystent Magazyniera",
-  "description": "Enterprise-grade warehouse management application with Gemini-powered stock analysis and order tracking.",
+  "name": "Asystent Magazyniera",
+  "description": "Simplified warehouse management system for stock tracking and order fulfillment.",
   "requestFramePermissions": [
     "camera"
   ]

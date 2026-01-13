@@ -1,5 +1,5 @@
 
-export type OrderStatus = 'Utworzone' | 'Wydrukowane' | 'Zrobione' | 'Błąd';
+export type OrderStatus = 'UTWORZONE' | 'ZATWIERDZONE';
 export type OrderType = 'OST' | 'ZAPAS';
 
 export interface Order {
@@ -9,22 +9,16 @@ export interface Order {
   type: OrderType;
   status: OrderStatus;
   timestamp: string;
-  location: string;
-  user: string;
   details?: {
-    sector: string;
-    mpk: string;
-    items?: string[];
+    sector?: string;
+    mpk?: string;
+    notes?: string;
   };
-  history?: {
-    time: string;
-    note: string;
-  }[];
 }
 
 export interface DashboardStats {
   todayOrders: number;
+  pendingOrders: number;
   lastOST: { ref: string; qty: number; time: string };
   lastZapas: { ref: string; qty: number; time: string };
-  activeReminders: number;
 }

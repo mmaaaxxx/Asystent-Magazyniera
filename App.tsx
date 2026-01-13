@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   ClipboardList, 
@@ -15,22 +15,25 @@ import {
   Trash2,
   Search,
   Filter,
-  ArrowRight
+  ArrowRight,
+  MoreVertical,
+  Calendar,
+  User,
+  Box
 } from 'lucide-react';
-import { Order, DashboardStats, OrderType } from './types';
+import { Order, DashboardStats, OrderType, OrderStatus } from './types';
 
 // --- Components ---
 
 const Badge: React.FC<{ type: string; children: React.ReactNode }> = ({ type, children }) => {
   const styles: Record<string, string> = {
-    'OST': 'bg-blue-500 text-white',
-    'ZAPAS': 'bg-emerald-500 text-white',
-    'Utworzone': 'bg-amber-400 text-white',
-    'Wydrukowane': 'bg-blue-500 text-white',
-    'Zrobione': 'bg-blue-500 text-white',
+    'OST': 'bg-blue-100 text-blue-700 border-blue-200',
+    'ZAPAS': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    'UTWORZONE': 'bg-amber-100 text-amber-700 border-amber-200',
+    'ZATWIERDZONE': 'bg-emerald-100 text-emerald-700 border-emerald-200',
   };
   return (
-    <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${styles[type] || 'bg-slate-200 text-slate-700'}`}>
+    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-tight border ${styles[type] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
       {children}
     </span>
   );
@@ -46,12 +49,15 @@ const SidebarItem: React.FC<{
   children?: React.ReactNode;
 }> = ({ icon, label, isActive, hasSubmenu, isOpen, onClick, children }) => {
   return (
-    <div>
+    <div className="mb-1">
       <button 
         onClick={onClick}
-        className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium transition-colors ${
-          isActive ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+        className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium transition-all rounded-lg mx-2 ${
+          isActive 
+            ? 'bg-blue-600 text-white shadow-md' 
+            : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
         }`}
+        style={{ width: 'calc(100% - 1rem)' }}
       >
         <div className="flex items-center gap-3">
           {icon}
@@ -62,7 +68,7 @@ const SidebarItem: React.FC<{
         )}
       </button>
       {isOpen && children && (
-        <div className="bg-slate-800/50 py-1">
+        <div className="mt-1 space-y-1">
           {children}
         </div>
       )}
@@ -73,16 +79,17 @@ const SidebarItem: React.FC<{
 const SubmenuItem: React.FC<{ label: string; isActive?: boolean; onClick: () => void }> = ({ label, isActive, onClick }) => (
   <button 
     onClick={onClick}
-    className={`w-full text-left pl-11 pr-4 py-2 text-sm transition-colors ${
-      isActive ? 'text-blue-400 font-semibold' : 'text-slate-400 hover:text-white'
+    className={`w-full text-left pl-12 pr-4 py-2 text-sm transition-colors rounded-lg mx-2 ${
+      isActive ? 'text-blue-400 font-semibold bg-blue-500/10' : 'text-slate-500 hover:text-white'
     }`}
+    style={{ width: 'calc(100% - 1.5rem)' }}
   >
     {label}
   </button>
 );
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<'dashboard' | 'list'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'list' | 'reminders' | 'settings'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({ panel: true, orders: true });
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -91,22 +98,21 @@ const App: React.FC = () => {
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
 
   // Mock Data
-  const [orders] = useState<Order[]>([
-    { id: '70620', reference: 'MCB CP MONTAZ', quantity: 1, type: 'OST', status: 'Utworzone', timestamp: '13:10:07 17/12/2025', location: 'M03', user: 'EWA OLEKSYK [00696]', details: { sector: 'A1', mpk: '3242103' }, history: [{ time: '13:10', note: 'Zgłoszenie utworzone przez system.' }] },
-    { id: '70619', reference: 'Tampodruk Bieruń', quantity: 12, type: 'ZAPAS', status: 'Utworzone', timestamp: '13:04:11 17/12/2025', location: 'M03', user: 'HUBERT DOMZOŁ [00584]', details: { sector: 'B2', mpk: '3242102' } },
-    { id: '70618', reference: 'MCB CP MONTAZ', quantity: 5, type: 'OST', status: 'Wydrukowane', timestamp: '12:36:39 17/12/2025', location: 'M03', user: 'EWA OLEKSYK [00696]' },
-    { id: '70617', reference: 'Tampodruk Bieruń', quantity: 20, type: 'ZAPAS', status: 'Wydrukowane', timestamp: '12:06:59 17/12/2025', location: 'M03', user: 'HUBERT DOMZOŁ [00584]' },
-    { id: '70616', reference: 'Nawijarki', quantity: 8, type: 'OST', status: 'Wydrukowane', timestamp: '11:49:50 17/12/2025', location: 'M03', user: 'AGNIESZKA KACZMARSKA [00388]' },
-    { id: '70615', reference: '4PP Podmontaż 1', quantity: 2, type: 'OST', status: 'Wydrukowane', timestamp: '11:32:26 17/12/2025', location: 'M03', user: 'KLAUDIA GINALSKA [02845]' },
-    { id: '70614', reference: 'H3', quantity: 15, type: 'ZAPAS', status: 'Wydrukowane', timestamp: '11:30:22 17/12/2025', location: 'M03', user: 'KLAUDIA GINALSKA [02845]' },
+  const [orders, setOrders] = useState<Order[]>([
+    { id: '10250', reference: '0B1227', quantity: 24, type: 'OST', status: 'UTWORZONE', timestamp: '14:22:10 18/05/2024' },
+    { id: '10249', reference: '2M3390', quantity: 150, type: 'ZAPAS', status: 'UTWORZONE', timestamp: '14:15:05 18/05/2024' },
+    { id: '10248', reference: 'XG9912', quantity: 8, type: 'OST', status: 'ZATWIERDZONE', timestamp: '13:50:44 18/05/2024' },
+    { id: '10247', reference: '0B1227', quantity: 48, type: 'OST', status: 'ZATWIERDZONE', timestamp: '13:12:00 18/05/2024' },
+    { id: '10246', reference: 'RR4421', quantity: 500, type: 'ZAPAS', status: 'ZATWIERDZONE', timestamp: '12:45:30 18/05/2024' },
+    { id: '10245', reference: '2M3390', quantity: 75, type: 'ZAPAS', status: 'UTWORZONE', timestamp: '12:10:15 18/05/2024' },
   ]);
 
-  const stats: DashboardStats = {
-    todayOrders: 142,
-    lastOST: { ref: '70620', qty: 1, time: '13:10' },
-    lastZapas: { ref: '70619', qty: 12, time: '13:04' },
-    activeReminders: 3
-  };
+  const stats: DashboardStats = useMemo(() => ({
+    todayOrders: orders.length,
+    pendingOrders: orders.filter(o => o.status === 'UTWORZONE').length,
+    lastOST: { ref: '0B1227', qty: 24, time: '14:22' },
+    lastZapas: { ref: '2M3390', qty: 150, time: '14:15' }
+  }), [orders]);
 
   const toggleRow = (id: string) => {
     const next = new Set(expandedRows);
@@ -115,18 +121,25 @@ const App: React.FC = () => {
     setExpandedRows(next);
   };
 
-  const filteredOrders = orders.filter(o => {
-    const matchesSearch = o.reference.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.includes(searchQuery);
-    const matchesType = typeFilter === 'ALL' || o.type === typeFilter;
-    return matchesSearch && matchesType;
-  });
+  const handleZatwierdz = (id: string) => {
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' } : o));
+  };
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const matchesSearch = o.reference.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.includes(searchQuery);
+      const matchesType = typeFilter === 'ALL' || o.type === typeFilter;
+      return matchesSearch && matchesType;
+    });
+  }, [orders, searchQuery, typeFilter]);
 
   return (
-    <div className="flex min-h-screen font-sans text-slate-900 bg-slate-50 overflow-hidden">
-      {/* Mobile Backdrop */}
+    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
+      
+      {/* Mobile Drawer Backdrop */}
       {mobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden" 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden transition-opacity" 
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
@@ -134,26 +147,26 @@ const App: React.FC = () => {
       {/* Sidebar */}
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-50
-        w-64 bg-slate-900 flex flex-col transition-transform duration-300 transform
+        w-64 bg-slate-900 flex flex-col transition-all duration-300 ease-in-out transform
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        {/* Header/Logo */}
-        <div className="h-16 flex items-center px-4 bg-slate-900 border-b border-slate-800 shrink-0">
-          <div className="w-8 h-8 bg-orange-600 rounded flex items-center justify-center font-bold text-white text-xs mr-3">HAGER</div>
-          <span className="text-white font-bold tracking-tight">HPS Kanban</span>
+        {/* Branding */}
+        <div className="h-20 flex items-center px-6 shrink-0 border-b border-slate-800">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center font-black text-white text-lg shadow-lg shadow-blue-500/20 mr-3">AM</div>
+          <div className="flex flex-col">
+            <span className="text-white font-bold leading-tight tracking-tight">Asystent</span>
+            <span className="text-slate-400 text-xs font-medium">Magazyniera</span>
+          </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4">
+        {/* Nav Container */}
+        <nav className="flex-1 overflow-y-auto py-6 space-y-2">
           <SidebarItem 
             icon={<LayoutDashboard className="w-5 h-5" />} 
-            label="Panel" 
-            hasSubmenu 
-            isOpen={sidebarSections.panel}
-            onClick={() => setSidebarSections(s => ({ ...s, panel: !s.panel }))}
-          >
-            <SubmenuItem label="Dashboard" isActive={activeView === 'dashboard'} onClick={() => { setActiveView('dashboard'); setMobileMenuOpen(false); }} />
-          </SidebarItem>
+            label="Dashboard" 
+            isActive={activeView === 'dashboard'}
+            onClick={() => { setActiveView('dashboard'); setMobileMenuOpen(false); }}
+          />
 
           <SidebarItem 
             icon={<ClipboardList className="w-5 h-5" />} 
@@ -162,256 +175,402 @@ const App: React.FC = () => {
             isOpen={sidebarSections.orders}
             onClick={() => setSidebarSections(s => ({ ...s, orders: !s.orders }))}
           >
-            <SubmenuItem label="Lista zgłoszeń" isActive={activeView === 'list'} onClick={() => { setActiveView('list'); setMobileMenuOpen(false); }} />
-            <SubmenuItem label="Nowe zgłoszenie" onClick={() => setShowNewOrderModal(true)} />
+            <SubmenuItem 
+              label="Lista zgłoszeń" 
+              isActive={activeView === 'list'} 
+              onClick={() => { setActiveView('list'); setMobileMenuOpen(false); }} 
+            />
+            <SubmenuItem 
+              label="Nowe zgłoszenie" 
+              onClick={() => { setShowNewOrderModal(true); setMobileMenuOpen(false); }} 
+            />
           </SidebarItem>
 
           <SidebarItem 
             icon={<Bell className="w-5 h-5" />} 
             label="Przypomnienia" 
-            onClick={() => {}}
+            isActive={activeView === 'reminders'}
+            onClick={() => { setActiveView('reminders'); setMobileMenuOpen(false); }}
           />
 
           <SidebarItem 
             icon={<Settings className="w-5 h-5" />} 
             label="Ustawienia" 
-            onClick={() => {}}
+            isActive={activeView === 'settings'}
+            onClick={() => { setActiveView('settings'); setMobileMenuOpen(false); }}
           />
         </nav>
 
-        {/* Footer info */}
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold">MT</div>
-            <div>
-              <p className="text-xs text-white font-semibold">Magazyn Tychy</p>
-              <p className="text-[10px] text-slate-400">ID: 99999999</p>
+        {/* User context */}
+        <div className="p-4 border-t border-slate-800 bg-slate-950/30">
+          <div className="flex items-center gap-3 px-2">
+            <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 font-bold border border-slate-700">MT</div>
+            <div className="min-w-0">
+              <p className="text-sm text-white font-semibold truncate">Magazyn Główny</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Strefa A-12</p>
             </div>
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      {/* Content Wrapper */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
-        {/* Top Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sticky top-0 z-30 shrink-0">
+        {/* Navbar */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30 shrink-0">
           <div className="flex items-center gap-4">
-            <button className="lg:hidden p-2 -ml-2 text-slate-500" onClick={() => setMobileMenuOpen(true)}>
+            <button className="lg:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="w-6 h-6" />
             </button>
-            <h1 className="font-bold text-slate-800 text-lg hidden sm:block">
-              {activeView === 'dashboard' ? 'Asystent Magazyniera' : 'Lista zgłoszeń'}
-            </h1>
+            <div className="flex flex-col">
+              <h1 className="font-bold text-slate-800 text-base sm:text-lg">
+                {activeView === 'dashboard' ? 'Pulpit Sterowniczy' : 
+                 activeView === 'list' ? 'Lista Zgłoszeń' :
+                 activeView === 'reminders' ? 'Przypomnienia' : 'Ustawienia'}
+              </h1>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <Calendar className="w-3 h-3" />
+                {new Date().toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          
+          <div className="flex items-center gap-3">
+            <button className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
+            </button>
+            <div className="h-8 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
             <button 
               onClick={() => setShowNewOrderModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all active:scale-95 shadow-sm"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-500/20"
             >
               <PlusSquare className="w-4 h-4" />
-              <span className="hidden sm:inline">Nowe zgłoszenie</span>
+              <span className="hidden sm:inline">Nowe Zgłoszenie</span>
             </button>
           </div>
         </header>
 
-        {/* Scrollable View Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 scroll-smooth">
+        {/* Scrollable Main */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-8 scroll-smooth">
           
-          {activeView === 'dashboard' ? (
-            <div className="space-y-6">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Dzisiejsze zgłoszenia</p>
-                  <p className="text-3xl font-bold text-slate-900">{stats.todayOrders}</p>
-                  <div className="mt-2 text-xs text-emerald-600 font-medium flex items-center gap-1">
-                    <ArrowRight className="w-3 h-3 rotate-[-45deg]" /> +12% vs wczoraj
-                  </div>
-                </div>
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Ostatni OST</p>
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-lg font-bold text-slate-900">REF: {stats.lastOST.ref}</p>
-                      <p className="text-sm text-slate-500">{stats.lastOST.qty} szt. • {stats.lastOST.time}</p>
+          {activeView === 'dashboard' && (
+            <div className="animate-in fade-in duration-500 space-y-8">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {[
+                  { label: 'Wszystkie Dziś', val: stats.todayOrders, sub: 'Suma zleceń', color: 'blue' },
+                  { label: 'Oczekujące', val: stats.pendingOrders, sub: 'Status: Utworzone', color: 'amber' },
+                  { label: 'Ostatni OST', val: stats.lastOST.ref, sub: `${stats.lastOST.qty} szt. • ${stats.lastOST.time}`, color: 'blue' },
+                  { label: 'Ostatni Zapas', val: stats.lastZapas.ref, sub: `${stats.lastZapas.qty} szt. • ${stats.lastZapas.time}`, color: 'indigo' },
+                ].map((s, idx) => (
+                  <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
+                    <div className="flex justify-between items-start mb-4">
+                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">{s.label}</p>
+                      <div className={`p-2 rounded-lg bg-${s.color}-50 text-${s.color}-600`}>
+                        <Box className="w-4 h-4" />
+                      </div>
                     </div>
-                    <Badge type="OST">OST</Badge>
+                    <p className="text-2xl font-black text-slate-900 mb-1">{s.val}</p>
+                    <p className="text-xs text-slate-400 font-medium">{s.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Quick Actions / Recent Orders Preview */}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <div className="xl:col-span-2 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                      <ClipboardList className="w-4 h-4 text-blue-600" />
+                      Ostatnie Aktywności
+                    </h2>
+                    <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
+                  </div>
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+                    {orders.slice(0, 4).map((o) => (
+                      <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id); }}>
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {o.type}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">{o.reference}</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o.id} • {o.timestamp.split(' ')[0]}</p>
+                          </div>
+                        </div>
+                        <Badge type={o.status}>{o.status}</Badge>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Ostatni ZAPAS</p>
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-lg font-bold text-slate-900">REF: {stats.lastZapas.ref}</p>
-                      <p className="text-sm text-slate-500">{stats.lastZapas.qty} szt. • {stats.lastZapas.time}</p>
+
+                <div className="space-y-4">
+                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Status Magazynu</h2>
+                  <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden group">
+                    <div className="relative z-10 space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-600/20 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/10">
+                          <LayoutDashboard className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Wydajność dzisiaj</p>
+                          <p className="text-lg font-black">92% Celu</p>
+                        </div>
+                      </div>
+                      <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full" style={{ width: '92%' }}></div>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium leading-relaxed">Pozostało 12 zleceń do zamknięcia zmiany dziennej.</p>
                     </div>
-                    <Badge type="ZAPAS">ZAPAS</Badge>
                   </div>
-                </div>
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">Aktywne przypomnienia</p>
-                  <p className="text-3xl font-bold text-amber-500">{stats.activeReminders}</p>
-                  <button className="mt-2 text-xs text-blue-600 font-semibold hover:underline">Zobacz wszystkie</button>
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-              {/* Table Filters/Search */}
-              <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-50/50">
-                <div className="relative w-full sm:w-80">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          )}
+
+          {activeView === 'list' && (
+            <div className="animate-in slide-in-from-bottom-4 duration-500 flex flex-col h-full space-y-4">
+              {/* Controls */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div className="relative w-full md:w-96 group">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                   <input 
                     type="text" 
-                    placeholder="Szukaj po referencji lub ID..." 
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Szukaj referencji (np. 0B1227)..." 
+                    className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <Filter className="w-4 h-4 text-slate-400" />
-                  <select 
-                    className="border border-slate-200 rounded-lg text-sm p-2 bg-white flex-1 sm:flex-initial"
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value as any)}
-                  >
-                    <option value="ALL">Wszystkie typy</option>
-                    <option value="OST">Tylko OST</option>
-                    <option value="ZAPAS">Tylko ZAPAS</option>
-                  </select>
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">
+                    {['ALL', 'OST', 'ZAPAS'].map((type) => (
+                      <button 
+                        key={type}
+                        onClick={() => setTypeFilter(type as any)}
+                        className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          typeFilter === type ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        {type === 'ALL' ? 'WSZYSTKIE' : type}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Data Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[1000px]">
-                  <thead>
-                    <tr className="bg-slate-100/80 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
-                      <th className="px-4 py-3 w-12 text-center">Akcje</th>
-                      <th className="px-4 py-3 w-20">ID</th>
-                      <th className="px-4 py-3">Referencja</th>
-                      <th className="px-4 py-3 w-24">Ilość</th>
-                      <th className="px-4 py-3 w-24 text-center">Typ</th>
-                      <th className="px-4 py-3 w-32">Status</th>
-                      <th className="px-4 py-3">Data / Godzina</th>
-                      <th className="px-4 py-3">Lokalizacja</th>
-                      <th className="px-4 py-3">Użytkownik</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredOrders.length > 0 ? filteredOrders.map((order) => (
-                      <React.Fragment key={order.id}>
-                        <tr className={`hover:bg-slate-50 transition-colors group ${expandedRows.has(order.id) ? 'bg-blue-50/30' : ''}`}>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-1 justify-center">
-                              <button 
-                                onClick={() => toggleRow(order.id)}
-                                className={`p-1.5 rounded hover:bg-slate-200 transition-transform ${expandedRows.has(order.id) ? 'rotate-180' : ''}`}
-                              >
-                                <ChevronDown className="w-4 h-4 text-slate-500" />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-sm font-medium text-slate-600">{order.id}</td>
-                          <td className="px-4 py-4 text-sm font-semibold text-slate-900">{order.reference}</td>
-                          <td className="px-4 py-4 text-sm font-bold text-slate-900">{order.quantity}</td>
-                          <td className="px-4 py-4 text-center">
-                            <Badge type={order.type}>{order.type}</Badge>
-                          </td>
-                          <td className="px-4 py-4">
-                            <Badge type={order.status}>{order.status}</Badge>
-                          </td>
-                          <td className="px-4 py-4 text-xs text-slate-500 tabular-nums">{order.timestamp}</td>
-                          <td className="px-4 py-4 text-sm text-slate-700">{order.location}</td>
-                          <td className="px-4 py-4 text-xs text-slate-500 truncate max-w-[150px]">{order.user}</td>
-                        </tr>
-
-                        {/* Expandable Content */}
-                        {expandedRows.has(order.id) && (
-                          <tr className="bg-blue-50/20">
-                            <td colSpan={9} className="px-12 py-6 border-l-4 border-blue-500">
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                {/* Details Section */}
-                                <div>
-                                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Szczegóły</h3>
-                                  <dl className="space-y-3">
-                                    <div className="flex justify-between border-b border-slate-200 pb-1">
-                                      <dt className="text-sm text-slate-500">Sektor:</dt>
-                                      <dd className="text-sm font-bold text-slate-900">{order.details?.sector || '—'}</dd>
-                                    </div>
-                                    <div className="flex justify-between border-b border-slate-200 pb-1">
-                                      <dt className="text-sm text-slate-500">Numer MPK:</dt>
-                                      <dd className="text-sm font-bold text-slate-900">{order.details?.mpk || '—'}</dd>
-                                    </div>
-                                    <div className="flex justify-between border-b border-slate-200 pb-1">
-                                      <dt className="text-sm text-slate-500">Referencja:</dt>
-                                      <dd className="text-sm font-bold text-slate-900">{order.reference}</dd>
-                                    </div>
-                                  </dl>
-                                </div>
-
-                                {/* History / Notes */}
-                                <div className="lg:col-span-2">
-                                  <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Historia / Notatki</h3>
-                                    <button className="text-[10px] text-blue-600 font-bold hover:underline">DODAJ NOTATKĘ</button>
-                                  </div>
-                                  <div className="space-y-4">
-                                    {order.history?.map((entry, idx) => (
-                                      <div key={idx} className="flex gap-4">
-                                        <div className="shrink-0 w-16 text-[10px] font-bold text-slate-400 mt-1">{entry.time}</div>
-                                        <div className="relative pb-4">
-                                          {idx !== (order.history?.length || 0) - 1 && (
-                                            <div className="absolute left-[-9px] top-2 bottom-0 w-[1px] bg-slate-200"></div>
-                                          )}
-                                          <div className="absolute left-[-13px] top-1.5 w-2 h-2 rounded-full bg-blue-500"></div>
-                                          <p className="text-sm text-slate-700">{entry.note}</p>
-                                        </div>
-                                      </div>
-                                    )) || (
-                                      <p className="text-sm text-slate-400 italic">Brak dodatkowej historii.</p>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Row Actions */}
-                              <div className="mt-8 pt-6 border-t border-slate-200 flex flex-wrap gap-2">
-                                <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm">
-                                  <Printer className="w-3 h-3" /> DRUKUJ ETYKIETĘ
-                                </button>
-                                <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50">
-                                  <CheckCircle className="w-3 h-3 text-emerald-500" /> OZNACZ JAKO ZROBIONE
-                                </button>
-                                <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50">
-                                  <Edit className="w-3 h-3 text-blue-500" /> EDYTUJ
-                                </button>
-                                <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-red-600 text-xs font-bold hover:bg-red-50">
-                                  <Trash2 className="w-3 h-3" /> USUŃ
-                                </button>
+              {/* Data Display - Responsive Container */}
+              <div className="flex-1 min-h-0">
+                {/* Desktop Table View */}
+                <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/80 border-b border-slate-200">
+                        <th className="px-4 py-4 w-12 text-center"></th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ID</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Referencja</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Ilość</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Typ</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Status</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Data / Godzina</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredOrders.map((o) => (
+                        <React.Fragment key={o.id}>
+                          <tr className={`hover:bg-blue-50/30 transition-colors cursor-pointer ${expandedRows.has(o.id) ? 'bg-blue-50/50' : ''}`} onClick={() => toggleRow(o.id)}>
+                            <td className="px-4 py-4">
+                              <div className={`p-1 rounded-md transition-transform ${expandedRows.has(o.id) ? 'rotate-180 text-blue-600' : 'text-slate-400'}`}>
+                                <ChevronDown className="w-4 h-4" />
                               </div>
                             </td>
+                            <td className="px-6 py-4 text-sm font-bold text-slate-500">{o.id}</td>
+                            <td className="px-6 py-4 text-sm font-black text-slate-900">{o.reference}</td>
+                            <td className="px-6 py-4 text-sm font-black text-slate-800">{o.quantity}</td>
+                            <td className="px-6 py-4">
+                              <Badge type={o.type}>{o.type}</Badge>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <Badge type={o.status}>{o.status}</Badge>
+                            </td>
+                            <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right tabular-nums">{o.timestamp}</td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    )) : (
-                      <tr>
-                        <td colSpan={9} className="px-4 py-20 text-center text-slate-400">
-                          Brak zgłoszeń pasujących do filtrów.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                          
+                          {/* Desktop Expandable Content */}
+                          {expandedRows.has(o.id) && (
+                            <tr className="bg-blue-50/30">
+                              <td colSpan={7} className="px-16 py-8 border-l-4 border-blue-600 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div className="grid grid-cols-3 gap-12 mb-8">
+                                  <div className="space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kluczowe Parametry</h4>
+                                    <div className="space-y-2">
+                                      <div className="flex justify-between border-b border-slate-200 pb-1">
+                                        <span className="text-xs text-slate-500 font-medium">Referencja produktu:</span>
+                                        <span className="text-xs font-black">{o.reference}</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-slate-200 pb-1">
+                                        <span className="text-xs text-slate-500 font-medium">Ilość zamówiona:</span>
+                                        <span className="text-xs font-black">{o.quantity} szt.</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-slate-200 pb-1">
+                                        <span className="text-xs text-slate-500 font-medium">Typ zlecenia:</span>
+                                        <span className="text-xs font-black">{o.type}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Informacje Czasowe</h4>
+                                    <div className="space-y-2">
+                                      <div className="flex justify-between border-b border-slate-200 pb-1">
+                                        <span className="text-xs text-slate-500 font-medium">Data rejestracji:</span>
+                                        <span className="text-xs font-black">{o.timestamp.split(' ')[1]}</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-slate-200 pb-1">
+                                        <span className="text-xs text-slate-500 font-medium">Czas utworzenia:</span>
+                                        <span className="text-xs font-black">{o.timestamp.split(' ')[0]}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Obsługa</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                      {o.status === 'UTWORZONE' && (
+                                        <button 
+                                          onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
+                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-95 transition-all"
+                                        >
+                                          <CheckCircle className="w-3.5 h-3.5" /> ZATWIERDŹ
+                                        </button>
+                                      )}
+                                      <button className="flex-1 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all">
+                                        <Printer className="w-3.5 h-3.5" /> DRUKUJ
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                      {filteredOrders.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-medium">Brak wyników dla podanych kryteriów.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile/Tablet Card List View */}
+                <div className="lg:hidden space-y-4">
+                  {filteredOrders.map((o) => (
+                    <div key={o.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all ${expandedRows.has(o.id) ? 'ring-2 ring-blue-500/20' : ''}`}>
+                      <div className="p-5 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id)}>
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {o.type}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-slate-900 truncate">{o.reference}</p>
+                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{o.id} • {o.quantity} SZT.</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge type={o.status}>{o.status === 'UTWORZONE' ? 'UTW' : 'ZATW'}</Badge>
+                          <div className={`transition-transform duration-300 ${expandedRows.has(o.id) ? 'rotate-180 text-blue-600' : 'text-slate-300'}`}>
+                            <ChevronDown className="w-5 h-5" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {expandedRows.has(o.id) && (
+                        <div className="px-5 pb-5 pt-1 space-y-6 animate-in slide-in-from-top-2">
+                          <div className="h-[1px] bg-slate-100"></div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Data Rejestracji</p>
+                              <p className="text-xs font-bold text-slate-800">{o.timestamp}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Typ Zlecenia</p>
+                              <p className="text-xs font-bold text-slate-800">{o.type}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-2">
+                            {o.status === 'UTWORZONE' && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
+                                className="flex-1 bg-emerald-600 text-white h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
+                              >
+                                <CheckCircle className="w-4 h-4" /> ZATWIERDŹ
+                              </button>
+                            )}
+                            <button className="flex-1 bg-slate-100 text-slate-700 h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95">
+                              <Printer className="w-4 h-4" /> ETYKIETA
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {filteredOrders.length === 0 && (
+                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak wyników.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeView === 'reminders' && (
+            <div className="animate-in fade-in duration-500 flex flex-col items-center justify-center py-20 text-center space-y-4">
+              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center text-amber-500 border border-amber-100 shadow-sm">
+                <Bell className="w-10 h-10" />
+              </div>
+              <div className="max-w-xs">
+                <h3 className="text-lg font-black text-slate-800">Brak aktywnych powiadomień</h3>
+                <p className="text-sm text-slate-500 font-medium mt-2 leading-relaxed">System nie wykrył żadnych pilnych przypomnień w Twojej strefie.</p>
+              </div>
+            </div>
+          )}
+
+          {activeView === 'settings' && (
+            <div className="animate-in slide-in-from-right-4 duration-500 max-w-2xl space-y-8">
+              <div className="space-y-4">
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Ustawienia Stanowiska</h2>
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
+                  <div className="p-6 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Drukarka Etykiet</p>
+                      <p className="text-xs text-slate-500">Zebra ZT411 - Połączono (IP: 10.1.2.14)</p>
+                    </div>
+                    <button className="text-xs font-bold text-blue-600 px-4 py-2 bg-blue-50 rounded-lg">Konfiguruj</button>
+                  </div>
+                  <div className="p-6 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Dźwięki Systemowe</p>
+                      <p className="text-xs text-slate-500">Włącz powiadomienia o nowych OST</p>
+                    </div>
+                    <div className="w-10 h-6 bg-blue-600 rounded-full relative">
+                      <div className="absolute top-1 right-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                    </div>
+                  </div>
+                </div>
               </div>
               
-              {/* Pagination Mockup */}
-              <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 font-medium">
-                <div>Wyświetlanie 1 - {filteredOrders.length} z {filteredOrders.length} zgłoszeń</div>
-                <div className="flex gap-1">
-                  <button className="w-8 h-8 flex items-center justify-center rounded border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-50" disabled>1</button>
+              <div className="space-y-4">
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Informacje o Systemie</h2>
+                <div className="bg-slate-100/50 p-6 rounded-2xl border border-slate-200">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+                    <span>Wersja Oprogramowania</span>
+                    <span>v2.4.12-release</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    <span>Ostatnia Synchronizacja</span>
+                    <span>Dziś, 14:30:11</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -419,40 +578,61 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* New Order Modal (Simplified Mockup) */}
+      {/* New Order Modal */}
       {showNewOrderModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowNewOrderModal(false)} />
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden transform transition-all">
-            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-              <h3 className="font-bold text-slate-800">Nowe zgłoszenie</h3>
-              <button onClick={() => setShowNewOrderModal(false)} className="p-1 hover:bg-slate-100 rounded-full transition-colors">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowNewOrderModal(false)} />
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden transform animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+                  <PlusSquare className="w-4 h-4" />
+                </div>
+                <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">Nowe Zgłoszenie</h3>
+              </div>
+              <button onClick={() => setShowNewOrderModal(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
                 <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Referencja</label>
-                <input type="text" className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Np. Tampodruk Bieruń" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Ilość</label>
-                  <input type="number" className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" defaultValue={1} />
+            
+            <form className="p-6 space-y-6" onSubmit={(e) => { e.preventDefault(); setShowNewOrderModal(false); }}>
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Referencja Produktu</label>
+                <div className="relative group">
+                  <Box className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-blue-500" />
+                  <input 
+                    type="text" 
+                    autoFocus
+                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:normal-case" 
+                    placeholder="Np. 2M3390" 
+                  />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Typ</label>
-                  <select className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                    <option>OST</option>
-                    <option>ZAPAS</option>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Ilość (SZT.)</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
+                    placeholder="1" 
+                    defaultValue={1}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Typ</label>
+                  <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all appearance-none cursor-pointer">
+                    <option value="OST">OST</option>
+                    <option value="ZAPAS">ZAPAS</option>
                   </select>
                 </div>
               </div>
-            </div>
-            <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-              <button onClick={() => setShowNewOrderModal(false)} className="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-800">Anuluj</button>
-              <button className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700 active:scale-95 transition-all">Utwórz zgłoszenie</button>
-            </div>
+
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setShowNewOrderModal(false)} className="flex-1 px-4 py-3 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">ANULUJ</button>
+                <button type="submit" className="flex-[2] bg-blue-600 text-white px-6 py-3 rounded-xl text-xs font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">UTWÓRZ ZGŁOSZENIE</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
