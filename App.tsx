@@ -9,19 +9,12 @@ import {
   Menu, 
   X, 
   ChevronDown, 
-  Printer,
-  CheckCircle,
-  Edit,
-  Trash2,
-  Search,
-  Filter,
-  ArrowRight,
-  MoreVertical,
-  Calendar,
-  User,
+  CheckCircle, 
+  Search, 
+  Calendar, 
   Box
 } from 'lucide-react';
-import { Order, DashboardStats, OrderType, OrderStatus } from './types';
+import { Order, DashboardStats, OrderType } from './types';
 
 // --- Components ---
 
@@ -152,7 +145,7 @@ const App: React.FC = () => {
       `}>
         {/* Branding */}
         <div className="h-20 flex items-center px-6 shrink-0 border-b border-slate-800">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center font-black text-white text-lg shadow-lg shadow-blue-500/20 mr-3">AM</div>
+          <div className="h-8 px-2 bg-orange-600 rounded flex items-center justify-center font-black text-white text-[11px] tracking-tight shadow-lg shadow-orange-600/20 mr-3 uppercase">HAGER</div>
           <div className="flex flex-col">
             <span className="text-white font-bold leading-tight tracking-tight">Asystent</span>
             <span className="text-slate-400 text-xs font-medium">Magazyniera</span>
@@ -200,17 +193,6 @@ const App: React.FC = () => {
             onClick={() => { setActiveView('settings'); setMobileMenuOpen(false); }}
           />
         </nav>
-
-        {/* User context */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/30">
-          <div className="flex items-center gap-3 px-2">
-            <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 font-bold border border-slate-700">MT</div>
-            <div className="min-w-0">
-              <p className="text-sm text-white font-semibold truncate">Magazyn Główny</p>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Strefa A-12</p>
-            </div>
-          </div>
-        </div>
       </aside>
 
       {/* Content Wrapper */}
@@ -278,52 +260,29 @@ const App: React.FC = () => {
               </div>
 
               {/* Quick Actions / Recent Orders Preview */}
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                <div className="xl:col-span-2 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                      <ClipboardList className="w-4 h-4 text-blue-600" />
-                      Ostatnie Aktywności
-                    </h2>
-                    <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
-                  </div>
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
-                    {orders.slice(0, 4).map((o) => (
-                      <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id); }}>
-                        <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                            {o.type}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-800">{o.reference}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o.id} • {o.timestamp.split(' ')[0]}</p>
-                          </div>
-                        </div>
-                        <Badge type={o.status}>{o.status}</Badge>
-                      </div>
-                    ))}
-                  </div>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-blue-600" />
+                    Ostatnie Aktywności
+                  </h2>
+                  <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
                 </div>
-
-                <div className="space-y-4">
-                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Status Magazynu</h2>
-                  <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden group">
-                    <div className="relative z-10 space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-600/20 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/10">
-                          <LayoutDashboard className="w-5 h-5" />
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+                  {orders.slice(0, 4).map((o) => (
+                    <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id); }}>
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                          {o.type}
                         </div>
                         <div>
-                          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Wydajność dzisiaj</p>
-                          <p className="text-lg font-black">92% Celu</p>
+                          <p className="text-sm font-bold text-slate-800">{o.reference}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o.id} • {o.timestamp.split(' ')[0]}</p>
                         </div>
                       </div>
-                      <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: '92%' }}></div>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-medium leading-relaxed">Pozostało 12 zleceń do zamknięcia zmiany dziennej.</p>
+                      <Badge type={o.status}>{o.status}</Badge>
                     </div>
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -401,7 +360,7 @@ const App: React.FC = () => {
                           {expandedRows.has(o.id) && (
                             <tr className="bg-blue-50/30">
                               <td colSpan={7} className="px-16 py-8 border-l-4 border-blue-600 animate-in fade-in slide-in-from-top-1 duration-200">
-                                <div className="grid grid-cols-3 gap-12 mb-8">
+                                <div className="grid grid-cols-3 gap-12">
                                   <div className="space-y-4">
                                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kluczowe Parametry</h4>
                                     <div className="space-y-2">
@@ -435,17 +394,18 @@ const App: React.FC = () => {
                                   <div className="space-y-4">
                                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Obsługa</h4>
                                     <div className="flex flex-wrap gap-2">
-                                      {o.status === 'UTWORZONE' && (
+                                      {o.status === 'UTWORZONE' ? (
                                         <button 
                                           onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
-                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-95 transition-all"
+                                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-95 transition-all"
                                         >
                                           <CheckCircle className="w-3.5 h-3.5" /> ZATWIERDŹ
                                         </button>
+                                      ) : (
+                                        <div className="w-full flex items-center justify-center py-2.5 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-xl border border-emerald-100">
+                                          ZLECENIE ZATWIERDZONE
+                                        </div>
                                       )}
-                                      <button className="flex-1 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all">
-                                        <Printer className="w-3.5 h-3.5" /> DRUKUJ
-                                      </button>
                                     </div>
                                   </div>
                                 </div>
@@ -500,17 +460,18 @@ const App: React.FC = () => {
                           </div>
                           
                           <div className="flex gap-2">
-                            {o.status === 'UTWORZONE' && (
+                            {o.status === 'UTWORZONE' ? (
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
-                                className="flex-1 bg-emerald-600 text-white h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
+                                className="w-full bg-emerald-600 text-white h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
                               >
                                 <CheckCircle className="w-4 h-4" /> ZATWIERDŹ
                               </button>
+                            ) : (
+                                <div className="w-full flex items-center justify-center h-12 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-xl border border-emerald-100 uppercase">
+                                  Zatwierdzono
+                                </div>
                             )}
-                            <button className="flex-1 bg-slate-100 text-slate-700 h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95">
-                              <Printer className="w-4 h-4" /> ETYKIETA
-                            </button>
                           </div>
                         </div>
                       )}
@@ -539,37 +500,21 @@ const App: React.FC = () => {
           {activeView === 'settings' && (
             <div className="animate-in slide-in-from-right-4 duration-500 max-w-2xl space-y-8">
               <div className="space-y-4">
-                <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Ustawienia Stanowiska</h2>
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
-                  <div className="p-6 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-slate-800">Drukarka Etykiet</p>
-                      <p className="text-xs text-slate-500">Zebra ZT411 - Połączono (IP: 10.1.2.14)</p>
-                    </div>
-                    <button className="text-xs font-bold text-blue-600 px-4 py-2 bg-blue-50 rounded-lg">Konfiguruj</button>
-                  </div>
-                  <div className="p-6 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-slate-800">Dźwięki Systemowe</p>
-                      <p className="text-xs text-slate-500">Włącz powiadomienia o nowych OST</p>
-                    </div>
-                    <div className="w-10 h-6 bg-blue-600 rounded-full relative">
-                      <div className="absolute top-1 right-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
                 <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Informacje o Systemie</h2>
-                <div className="bg-slate-100/50 p-6 rounded-2xl border border-slate-200">
-                  <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                    <span>Wersja Oprogramowania</span>
-                    <span>v2.4.12-release</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                    <span>Ostatnia Synchronizacja</span>
-                    <span>Dziś, 14:30:11</span>
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="space-y-4">
+                    <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-2">
+                      <span>Wersja Oprogramowania</span>
+                      <span className="text-slate-900">v2.4.12-release</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-2">
+                      <span>Ostatnia Synchronizacja</span>
+                      <span className="text-slate-900">Dziś, 14:30:11</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                      <span>Środowisko</span>
+                      <span className="text-slate-900">PRODUKCJA (PL-TYCHY)</span>
+                    </div>
                   </div>
                 </div>
               </div>
