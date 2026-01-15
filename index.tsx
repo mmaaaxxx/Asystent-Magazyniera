@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -14,3 +13,22 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Function to remove splash screen after load
+const hideSplashScreen = () => {
+  const splash = document.getElementById('splash-screen');
+  if (splash) {
+    splash.style.opacity = '0';
+    setTimeout(() => {
+      splash.style.display = 'none';
+      splash.remove();
+    }, 400); // Match CSS transition duration
+  }
+};
+
+// Trigger splash removal
+if (document.readyState === 'complete') {
+  hideSplashScreen();
+} else {
+  window.addEventListener('load', hideSplashScreen);
+}
