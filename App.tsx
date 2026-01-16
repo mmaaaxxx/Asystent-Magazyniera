@@ -14,7 +14,8 @@ import {
   Calendar, 
   Box,
   Trash2,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { Order, DashboardStats, OrderType } from './types';
 
@@ -22,7 +23,8 @@ import { Order, DashboardStats, OrderType } from './types';
 const API_URLS = {
   GET_ORDERS: 'https://n8n.maxcore.dev/webhook/pobierz-zgloszenia',
   APPROVE_ORDER: 'https://n8n.maxcore.dev/webhook/zatwierdz-zgloszenie',
-  DELETE_ORDER: 'https://n8n.maxcore.dev/webhook/kasuj-zgloszenie'
+  DELETE_ORDER: 'https://n8n.maxcore.dev/webhook/kasuj-zgloszenie',
+  ADD_ORDER: 'https://n8n.maxcore.dev/webhook/dodaj-zgloszenie'
 };
 
 // --- Components ---
@@ -102,6 +104,15 @@ const App: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Form State
+  const [newOrderForm, setNewOrderForm] = useState({
+    reference: '',
+    quantity: 1,
+    type: 'OST' as OrderType
+  });
 
   // Helper for current date string DD/MM/YYYY
   const getTodayDateStr = () => {
@@ -110,6 +121,14 @@ const App: React.FC = () => {
   };
 
   const todayDate = useMemo(() => getTodayDateStr(), []);
+
+  // Toast auto-hide
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // API: Fetch Orders
   const fetchOrders = async () => {
@@ -169,6 +188,40 @@ const App: React.FC = () => {
       console.error('Error deleting order:', error);
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  // API: Add New Order
+  const handleAddNewOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOrderForm.reference.trim()) return;
+
+    setIsAdding(true);
+    try {
+      const response = await fetch(API_URLS.ADD_ORDER, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          referencja: newOrderForm.reference.toUpperCase(),
+          ilosc: newOrderForm.quantity,
+          typ: newOrderForm.type
+        })
+      });
+
+      if (response.ok) {
+        setToast({ message: 'Zgłoszenie dodane!', type: 'success' });
+        await fetchOrders(); // Refresh data
+        setActiveView('list'); // Redirect to list
+        setShowNewOrderModal(false); // Close modal
+        setNewOrderForm({ reference: '', quantity: 1, type: 'OST' }); // Reset form
+      } else {
+        setToast({ message: 'Błąd podczas dodawania.', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Error adding order:', error);
+      setToast({ message: 'Błąd sieci.', type: 'error' });
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -658,7 +711,7 @@ const App: React.FC = () => {
               </button>
             </div>
             
-            <form className="p-6 space-y-6" onSubmit={(e) => { e.preventDefault(); setShowNewOrderModal(false); }}>
+            <form className="p-6 space-y-6" onSubmit={handleAddNewOrder}>
               <div className="space-y-2">
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Referencja Produktu</label>
                 <div className="relative group">
@@ -666,6 +719,9 @@ const App: React.FC = () => {
                   <input 
                     type="text" 
                     autoFocus
+                    required
+                    value={newOrderForm.reference}
+                    onChange={(e) => setNewOrderForm(f => ({ ...f, reference: e.target.value }))}
                     className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:normal-case" 
                     placeholder="Np. 2M3390" 
                   />
@@ -677,14 +733,21 @@ const App: React.FC = () => {
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Ilość (SZT.)</label>
                   <input 
                     type="number" 
+                    required
+                    min="1"
+                    value={newOrderForm.quantity}
+                    onChange={(e) => setNewOrderForm(f => ({ ...f, quantity: parseInt(e.target.value) || 1 }))}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
                     placeholder="1" 
-                    defaultValue={1}
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Typ</label>
-                  <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all appearance-none cursor-pointer">
+                  <select 
+                    value={newOrderForm.type}
+                    onChange={(e) => setNewOrderForm(f => ({ ...f, type: e.target.value as OrderType }))}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all appearance-none cursor-pointer"
+                  >
                     <option value="OST">OST</option>
                     <option value="ZAPAS">ZAPAS</option>
                   </select>
@@ -692,10 +755,35 @@ const App: React.FC = () => {
               </div>
 
               <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => setShowNewOrderModal(false)} className="flex-1 px-4 py-3 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">ANULUJ</button>
-                <button type="submit" className="flex-[2] bg-blue-600 text-white px-6 py-3 rounded-xl text-xs font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">UTWÓRZ ZGŁOSZENIE</button>
+                <button 
+                  type="button" 
+                  onClick={() => setShowNewOrderModal(false)} 
+                  className="flex-1 px-4 py-3 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  ANULUJ
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isAdding}
+                  className="flex-[2] bg-blue-600 text-white px-6 py-3 rounded-xl text-xs font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  {isAdding && <Loader2 className="w-4 h-4 animate-spin" />}
+                  UTWÓRZ ZGŁOSZENIE
+                </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Global Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-bottom-8 duration-300">
+          <div className={`px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 border ${
+            toast.type === 'success' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-red-600 text-white border-red-500'
+          }`}>
+            {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            <span className="text-sm font-bold">{toast.message}</span>
           </div>
         </div>
       )}
