@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   ClipboardList, 
@@ -12,9 +12,18 @@ import {
   CheckCircle, 
   Search, 
   Calendar, 
-  Box
+  Box,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { Order, DashboardStats, OrderType } from './types';
+
+// --- API Endpoints ---
+const API_URLS = {
+  GET_ORDERS: 'https://n8n.maxcore.dev/webhook/pobierz-zgloszenia',
+  APPROVE_ORDER: 'https://n8n.maxcore.dev/webhook/zatwierdz-zgloszenie',
+  DELETE_ORDER: 'https://n8n.maxcore.dev/webhook/kasuj-zgloszenie'
+};
 
 // --- Components ---
 
@@ -82,30 +91,107 @@ const SubmenuItem: React.FC<{ label: string; isActive?: boolean; onClick: () => 
 );
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<'dashboard' | 'list' | 'reminders' | 'settings'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'list' | 'archive' | 'reminders' | 'settings'>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({ panel: true, orders: true });
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | OrderType>('ALL');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
+  
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
-  // Mock Data
-  const [orders, setOrders] = useState<Order[]>([
-    { id: '10250', reference: '0B1227', quantity: 24, type: 'OST', status: 'UTWORZONE', timestamp: '14:22:10 18/05/2024' },
-    { id: '10249', reference: '2M3390', quantity: 150, type: 'ZAPAS', status: 'UTWORZONE', timestamp: '14:15:05 18/05/2024' },
-    { id: '10248', reference: 'XG9912', quantity: 8, type: 'OST', status: 'ZATWIERDZONE', timestamp: '13:50:44 18/05/2024' },
-    { id: '10247', reference: '0B1227', quantity: 48, type: 'OST', status: 'ZATWIERDZONE', timestamp: '13:12:00 18/05/2024' },
-    { id: '10246', reference: 'RR4421', quantity: 500, type: 'ZAPAS', status: 'ZATWIERDZONE', timestamp: '12:45:30 18/05/2024' },
-    { id: '10245', reference: '2M3390', quantity: 75, type: 'ZAPAS', status: 'UTWORZONE', timestamp: '12:10:15 18/05/2024' },
-  ]);
+  // Helper for current date string DD/MM/YYYY
+  const getTodayDateStr = () => {
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  };
 
-  const stats: DashboardStats = useMemo(() => ({
-    todayOrders: orders.length,
-    pendingOrders: orders.filter(o => o.status === 'UTWORZONE').length,
-    lastOST: { ref: '0B1227', qty: 24, time: '14:22' },
-    lastZapas: { ref: '2M3390', qty: 150, time: '14:15' }
-  }), [orders]);
+  const todayDate = useMemo(() => getTodayDateStr(), []);
+
+  // API: Fetch Orders
+  const fetchOrders = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(API_URLS.GET_ORDERS);
+      const data = await response.json();
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  // API: Approve Order
+  const handleZatwierdz = async (id: string) => {
+    setProcessingId(id);
+    try {
+      const response = await fetch(API_URLS.APPROVE_ORDER, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      if (response.ok) {
+        setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' } : o));
+      }
+    } catch (error) {
+      console.error('Error approving order:', error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // API: Delete Order
+  const handleKasuj = async (id: string) => {
+    if (!window.confirm('Czy na pewno chcesz usunąć to zgłoszenie?')) return;
+    
+    setProcessingId(id);
+    try {
+      const response = await fetch(API_URLS.DELETE_ORDER, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      if (response.ok) {
+        setOrders(prev => prev.filter(o => o.id !== id));
+        const nextExpanded = new Set(expandedRows);
+        nextExpanded.delete(id);
+        setExpandedRows(nextExpanded);
+      }
+    } catch (error) {
+      console.error('Error deleting order:', error);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const stats: DashboardStats = useMemo(() => {
+    const todayOrders = orders.filter(o => o.timestamp.includes(todayDate));
+    const ostOrders = todayOrders.filter(o => o.type === 'OST');
+    const zapasOrders = todayOrders.filter(o => o.type === 'ZAPAS');
+    
+    return {
+      todayOrders: todayOrders.length,
+      pendingOrders: todayOrders.filter(o => o.status === 'UTWORZONE').length,
+      lastOST: ostOrders.length > 0 ? { 
+        ref: ostOrders[0].reference, 
+        qty: ostOrders[0].quantity, 
+        time: ostOrders[0].timestamp.split(' ')[0] 
+      } : { ref: '-', qty: 0, time: '-' },
+      lastZapas: zapasOrders.length > 0 ? { 
+        ref: zapasOrders[0].reference, 
+        qty: zapasOrders[0].quantity, 
+        time: zapasOrders[0].timestamp.split(' ')[0] 
+      } : { ref: '-', qty: 0, time: '-' }
+    };
+  }, [orders, todayDate]);
 
   const toggleRow = (id: string) => {
     const next = new Set(expandedRows);
@@ -114,17 +200,15 @@ const App: React.FC = () => {
     setExpandedRows(next);
   };
 
-  const handleZatwierdz = (id: string) => {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' } : o));
-  };
-
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const matchesSearch = o.reference.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.includes(searchQuery);
+      const isToday = o.timestamp.includes(todayDate);
+      const matchesView = activeView === 'archive' ? !isToday : (activeView === 'list' ? isToday : true);
+      const matchesSearch = o.reference.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.toString().includes(searchQuery);
       const matchesType = typeFilter === 'ALL' || o.type === typeFilter;
-      return matchesSearch && matchesType;
+      return matchesView && matchesSearch && matchesType;
     });
-  }, [orders, searchQuery, typeFilter]);
+  }, [orders, searchQuery, typeFilter, activeView, todayDate]);
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
@@ -174,6 +258,11 @@ const App: React.FC = () => {
               onClick={() => { setActiveView('list'); setMobileMenuOpen(false); }} 
             />
             <SubmenuItem 
+              label="Archiwum" 
+              isActive={activeView === 'archive'} 
+              onClick={() => { setActiveView('archive'); setMobileMenuOpen(false); }} 
+            />
+            <SubmenuItem 
               label="Nowe zgłoszenie" 
               onClick={() => { setShowNewOrderModal(true); setMobileMenuOpen(false); }} 
             />
@@ -208,6 +297,7 @@ const App: React.FC = () => {
               <h1 className="font-bold text-slate-800 text-base sm:text-lg">
                 {activeView === 'dashboard' ? 'Pulpit Sterowniczy' : 
                  activeView === 'list' ? 'Lista Zgłoszeń' :
+                 activeView === 'archive' ? 'Archiwum Zgłoszeń' :
                  activeView === 'reminders' ? 'Przypomnienia' : 'Ustawienia'}
               </h1>
               <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -218,9 +308,12 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-3">
-            <button className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
+            <button 
+              onClick={fetchOrders}
+              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+              title="Odśwież dane"
+            >
+              <Loader2 className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <div className="h-8 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
             <button 
@@ -236,7 +329,12 @@ const App: React.FC = () => {
         {/* Scrollable Main */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-8 scroll-smooth">
           
-          {activeView === 'dashboard' && (
+          {isLoading && activeView !== 'dashboard' ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+               <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
+               <p className="text-sm font-medium">Pobieranie zgłoszeń...</p>
+            </div>
+          ) : activeView === 'dashboard' ? (
             <div className="animate-in fade-in duration-500 space-y-8">
               {/* Stats Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -264,13 +362,13 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                     <ClipboardList className="w-4 h-4 text-blue-600" />
-                    Ostatnie Aktywności
+                    Ostatnie Aktywności (Dzisiaj)
                   </h2>
                   <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
-                  {orders.slice(0, 4).map((o) => (
-                    <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id); }}>
+                  {orders.filter(o => o.timestamp.includes(todayDate)).slice(0, 4).map((o) => (
+                    <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id.toString()); }}>
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
                           {o.type}
@@ -283,12 +381,13 @@ const App: React.FC = () => {
                       <Badge type={o.status}>{o.status}</Badge>
                     </div>
                   ))}
+                  {orders.filter(o => o.timestamp.includes(todayDate)).length === 0 && (
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak dzisiejszych aktywności.</div>
+                  )}
                 </div>
               </div>
             </div>
-          )}
-
-          {activeView === 'list' && (
+          ) : (activeView === 'list' || activeView === 'archive') && (
             <div className="animate-in slide-in-from-bottom-4 duration-500 flex flex-col h-full space-y-4">
               {/* Controls */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -296,7 +395,7 @@ const App: React.FC = () => {
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                   <input 
                     type="text" 
-                    placeholder="Szukaj referencji (np. 0B1227)..." 
+                    placeholder="Szukaj referencji lub ID..." 
                     className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -319,7 +418,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Data Display - Responsive Container */}
+              {/* Data Display */}
               <div className="flex-1 min-h-0">
                 {/* Desktop Table View */}
                 <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -338,9 +437,9 @@ const App: React.FC = () => {
                     <tbody className="divide-y divide-slate-100">
                       {filteredOrders.map((o) => (
                         <React.Fragment key={o.id}>
-                          <tr className={`hover:bg-blue-50/30 transition-colors cursor-pointer ${expandedRows.has(o.id) ? 'bg-blue-50/50' : ''}`} onClick={() => toggleRow(o.id)}>
+                          <tr className={`hover:bg-blue-50/30 transition-colors cursor-pointer ${expandedRows.has(o.id.toString()) ? 'bg-blue-50/50' : ''}`} onClick={() => toggleRow(o.id.toString())}>
                             <td className="px-4 py-4">
-                              <div className={`p-1 rounded-md transition-transform ${expandedRows.has(o.id) ? 'rotate-180 text-blue-600' : 'text-slate-400'}`}>
+                              <div className={`p-1 rounded-md transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180 text-blue-600' : 'text-slate-400'}`}>
                                 <ChevronDown className="w-4 h-4" />
                               </div>
                             </td>
@@ -357,7 +456,7 @@ const App: React.FC = () => {
                           </tr>
                           
                           {/* Desktop Expandable Content */}
-                          {expandedRows.has(o.id) && (
+                          {expandedRows.has(o.id.toString()) && (
                             <tr className="bg-blue-50/30">
                               <td colSpan={7} className="px-16 py-8 border-l-4 border-blue-600 animate-in fade-in slide-in-from-top-1 duration-200">
                                 <div className="grid grid-cols-3 gap-12">
@@ -393,19 +492,30 @@ const App: React.FC = () => {
                                   </div>
                                   <div className="space-y-4">
                                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Obsługa</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                      {o.status === 'UTWORZONE' ? (
+                                    <div className="flex flex-col gap-3">
+                                      <div className="flex gap-2">
                                         <button 
-                                          onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
-                                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-95 transition-all"
+                                          disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
+                                          onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id.toString()); }}
+                                          className={`flex-1 h-11 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${
+                                            o.status === 'ZATWIERDZONE' 
+                                              ? 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none cursor-default'
+                                              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/10'
+                                          }`}
                                         >
-                                          <CheckCircle className="w-3.5 h-3.5" /> ZATWIERDŹ
+                                          {processingId === o.id.toString() ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} 
+                                          {o.status === 'ZATWIERDZONE' ? 'ZATWIERDZONO' : 'ZATWIERDŹ'}
                                         </button>
-                                      ) : (
-                                        <div className="w-full flex items-center justify-center py-2.5 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-xl border border-emerald-100">
-                                          ZLECENIE ZATWIERDZONE
-                                        </div>
-                                      )}
+                                        
+                                        <button 
+                                          disabled={processingId === o.id.toString()}
+                                          onClick={(e) => { e.stopPropagation(); handleKasuj(o.id.toString()); }}
+                                          className="flex-1 bg-red-600 hover:bg-red-700 text-white h-11 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/10 active:scale-95 transition-all"
+                                        >
+                                          {processingId === o.id.toString() ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} 
+                                          KASUJ
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -416,7 +526,7 @@ const App: React.FC = () => {
                       ))}
                       {filteredOrders.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-medium">Brak wyników dla podanych kryteriów.</td>
+                          <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-medium">Brak zgłoszeń do wyświetlenia.</td>
                         </tr>
                       )}
                     </tbody>
@@ -426,8 +536,8 @@ const App: React.FC = () => {
                 {/* Mobile/Tablet Card List View */}
                 <div className="lg:hidden space-y-4">
                   {filteredOrders.map((o) => (
-                    <div key={o.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all ${expandedRows.has(o.id) ? 'ring-2 ring-blue-500/20' : ''}`}>
-                      <div className="p-5 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id)}>
+                    <div key={o.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all ${expandedRows.has(o.id.toString()) ? 'ring-2 ring-blue-500/20' : ''}`}>
+                      <div className="p-5 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
                         <div className="flex items-center gap-4">
                           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
                             {o.type}
@@ -439,13 +549,13 @@ const App: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-3">
                           <Badge type={o.status}>{o.status === 'UTWORZONE' ? 'UTW' : 'ZATW'}</Badge>
-                          <div className={`transition-transform duration-300 ${expandedRows.has(o.id) ? 'rotate-180 text-blue-600' : 'text-slate-300'}`}>
+                          <div className={`transition-transform duration-300 ${expandedRows.has(o.id.toString()) ? 'rotate-180 text-blue-600' : 'text-slate-300'}`}>
                             <ChevronDown className="w-5 h-5" />
                           </div>
                         </div>
                       </div>
 
-                      {expandedRows.has(o.id) && (
+                      {expandedRows.has(o.id.toString()) && (
                         <div className="px-5 pb-5 pt-1 space-y-6 animate-in slide-in-from-top-2">
                           <div className="h-[1px] bg-slate-100"></div>
                           <div className="grid grid-cols-2 gap-4">
@@ -460,25 +570,33 @@ const App: React.FC = () => {
                           </div>
                           
                           <div className="flex gap-2">
-                            {o.status === 'UTWORZONE' ? (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
-                                className="w-full bg-emerald-600 text-white h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
-                              >
-                                <CheckCircle className="w-4 h-4" /> ZATWIERDŹ
-                              </button>
-                            ) : (
-                                <div className="w-full flex items-center justify-center h-12 text-xs font-bold text-emerald-600 bg-emerald-50 rounded-xl border border-emerald-100 uppercase">
-                                  Zatwierdzono
-                                </div>
-                            )}
+                            <button 
+                              disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
+                              onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id.toString()); }}
+                              className={`flex-1 h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 ${
+                                o.status === 'ZATWIERDZONE' 
+                                  ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default'
+                                  : 'bg-emerald-600 text-white'
+                              }`}
+                            >
+                              {processingId === o.id.toString() ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} 
+                              {o.status === 'ZATWIERDZONE' ? 'ZATWIERDZONO' : 'ZATWIERDŹ'}
+                            </button>
+                            <button 
+                              disabled={processingId === o.id.toString()}
+                              onClick={(e) => { e.stopPropagation(); handleKasuj(o.id.toString()); }}
+                              className="flex-1 bg-red-600 text-white h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
+                            >
+                              {processingId === o.id.toString() ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} 
+                              KASUJ
+                            </button>
                           </div>
                         </div>
                       )}
                     </div>
                   ))}
                   {filteredOrders.length === 0 && (
-                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak wyników.</div>
+                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń w tej kategorii.</div>
                   )}
                 </div>
               </div>
@@ -509,7 +627,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-2">
                       <span>Ostatnia Synchronizacja</span>
-                      <span className="text-slate-900">Dziś, 14:30:11</span>
+                      <span className="text-slate-900">{new Date().toLocaleTimeString()}</span>
                     </div>
                     <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest">
                       <span>Środowisko</span>
