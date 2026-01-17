@@ -103,6 +103,7 @@ const App: React.FC = () => {
   
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -125,23 +126,38 @@ const App: React.FC = () => {
   // API: Fetch Orders
   const fetchOrders = async () => {
     setIsLoading(true);
+    setApiError(null);
     try {
+      console.log('Inicjowanie pobierania z:', API_URLS.GET_ORDERS);
       const response = await fetch(API_URLS.GET_ORDERS);
+      
+      // LOG PEŁNA ODPOWIEDŹ SERWERA
+      console.log('PEŁNA ODPOWIEDŹ SERWERA (status):', response.status, response.statusText);
+      
+      if (!response.ok) {
+        throw new Error(`Błąd serwera: ${response.status} ${response.statusText}`);
+      }
+
       const data = await response.json();
       
-      // DEBUG: LOG SUROWE DANE
-      console.log('SUROWE DANE:', data);
+      // LOG SUROWE DANE
+      console.log('SUROWE DANE (JSON):', data);
 
-      // Map and ensure ilosc is number
-      const mappedData = (Array.isArray(data) ? data : []).map((o: any) => ({
-        ...o,
-        ilosc: Number(o.ilosc)
-      }));
-      
-      // Bezpośrednie przypisanie bez filtrowania daty (na czas debugowania)
-      setOrders(mappedData);
-    } catch (error) {
-      console.error('Error fetching orders:', error);
+      // Weryfikacja formatu i przypisanie bezpośrednie
+      if (Array.isArray(data)) {
+        const mappedData = data.map((o: any) => ({
+          ...o,
+          ilosc: Number(o.ilosc) // Zabezpieczenie typu
+        }));
+        setOrders(mappedData);
+        console.log(`Przypisano ${mappedData.length} rekordów do stanu.`);
+      } else {
+        console.warn('Otrzymane dane nie są tablicą:', data);
+        setOrders([]);
+      }
+    } catch (error: any) {
+      console.error('Błąd pobierania orders:', error);
+      setApiError(error.message || 'Wystąpił nieoczekiwany błąd sieci (możliwy CORS).');
     } finally {
       setIsLoading(false);
     }
@@ -249,7 +265,6 @@ const App: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      // Usunięto filtrowanie daty isRecent dla ułatwienia debugowania
       const matchesSearch = o.referencja?.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.toString().includes(searchQuery);
       const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
       return matchesSearch && matchesType;
@@ -354,8 +369,8 @@ const App: React.FC = () => {
             <div className="flex flex-col">
               <h1 className="font-bold text-slate-800 text-base sm:text-lg">
                 {activeView === 'dashboard' ? 'Pulpit Sterowniczy' : 
-                 activeView === 'list' ? 'Lista Zgłoszeń (Debug)' :
-                 activeView === 'archive' ? 'Archiwum (Debug)' :
+                 activeView === 'list' ? 'Lista Zgłoszeń' :
+                 activeView === 'archive' ? 'Archiwum' :
                  activeView === 'reminders' ? 'Przypomnienia' : 'Ustawienia'}
               </h1>
               <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -383,6 +398,15 @@ const App: React.FC = () => {
             </button>
           </div>
         </header>
+
+        {/* API Error Banner */}
+        {apiError && (
+          <div className="bg-red-600 text-white px-6 py-3 text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top duration-300">
+            <AlertCircle className="w-5 h-5" />
+            <span>BŁĄD POŁĄCZENIA: {apiError}</span>
+            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline">Ponów próbę</button>
+          </div>
+        )}
 
         {/* Scrollable Main */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-8 scroll-smooth">
@@ -439,8 +463,8 @@ const App: React.FC = () => {
                       <Badge type={o.status}>{o.status}</Badge>
                     </div>
                   ))}
-                  {orders.length === 0 && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych w bazie.</div>
+                  {orders.length === 0 && !isLoading && !apiError && (
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych w bazie (Otrzymano 0 rekordów).</div>
                   )}
                 </div>
               </div>
@@ -451,7 +475,7 @@ const App: React.FC = () => {
               {/* DEBUG INFO */}
               <div className="bg-blue-50 border border-blue-100 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 flex items-center justify-between">
                 <span>Tryb Debug: Filtry daty wyłączone.</span>
-                <span>{orders.length === 0 ? 'Otrzymano 0 rekordów z API' : `Wyświetlam ${filteredOrders.length} rekordów (z ${orders.length} ogółem)`}</span>
+                <span>{orders.length === 0 && !isLoading ? 'Otrzymano 0 rekordów z API' : `Wyświetlam ${filteredOrders.length} rekordów (z ${orders.length} ogółem)`}</span>
               </div>
 
               {/* Controls */}
@@ -589,7 +613,7 @@ const App: React.FC = () => {
                           )}
                         </React.Fragment>
                       ))}
-                      {filteredOrders.length === 0 && (
+                      {filteredOrders.length === 0 && !isLoading && (
                         <tr>
                           <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-medium">Brak zgłoszeń do wyświetlenia.</td>
                         </tr>
@@ -660,7 +684,7 @@ const App: React.FC = () => {
                       )}
                     </div>
                   ))}
-                  {filteredOrders.length === 0 && (
+                  {filteredOrders.length === 0 && !isLoading && (
                     <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń w tej kategorii.</div>
                   )}
                 </div>
