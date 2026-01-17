@@ -3,12 +3,12 @@ export type OrderStatus = 'UTWORZONE' | 'ZATWIERDZONE';
 export type OrderType = 'OST' | 'ZAPAS';
 
 export interface Order {
-  id: string;
-  reference: string;
-  quantity: number;
-  type: OrderType;
+  id: string | number;
+  referencja: string;
+  ilosc: number;
+  typ: OrderType;
   status: OrderStatus;
-  timestamp: string;
+  data_utworzenia: string;
   details?: {
     sector?: string;
     mpk?: string;
@@ -19,6 +19,6 @@ export interface Order {
 export interface DashboardStats {
   todayOrders: number;
   pendingOrders: number;
-  lastOST: { ref: string; qty: number; time: string };
-  lastZapas: { ref: string; qty: number; time: string };
+  totalOST: number;
+  totalZapas: number;
 }

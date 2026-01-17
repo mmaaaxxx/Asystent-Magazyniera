@@ -109,18 +109,10 @@ const App: React.FC = () => {
 
   // Form State
   const [newOrderForm, setNewOrderForm] = useState({
-    reference: '',
-    quantity: 1,
-    type: 'OST' as OrderType
+    referencja: '',
+    ilosc: 1,
+    typ: 'OST' as OrderType
   });
-
-  // Helper for current date string DD/MM/YYYY
-  const getTodayDateStr = () => {
-    const d = new Date();
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-  };
-
-  const todayDate = useMemo(() => getTodayDateStr(), []);
 
   // Toast auto-hide
   useEffect(() => {
@@ -136,7 +128,12 @@ const App: React.FC = () => {
     try {
       const response = await fetch(API_URLS.GET_ORDERS);
       const data = await response.json();
-      setOrders(Array.isArray(data) ? data : []);
+      // Ensure ilosc is treated as a number
+      const mappedData = (Array.isArray(data) ? data : []).map((o: any) => ({
+        ...o,
+        ilosc: Number(o.ilosc)
+      }));
+      setOrders(mappedData);
     } catch (error) {
       console.error('Error fetching orders:', error);
     } finally {
@@ -149,8 +146,8 @@ const App: React.FC = () => {
   }, []);
 
   // API: Approve Order
-  const handleZatwierdz = async (id: string) => {
-    setProcessingId(id);
+  const handleZatwierdz = async (id: string | number) => {
+    setProcessingId(id.toString());
     try {
       const response = await fetch(API_URLS.APPROVE_ORDER, {
         method: 'POST',
@@ -168,10 +165,10 @@ const App: React.FC = () => {
   };
 
   // API: Delete Order
-  const handleKasuj = async (id: string) => {
+  const handleKasuj = async (id: string | number) => {
     if (!window.confirm('Czy na pewno chcesz usunąć to zgłoszenie?')) return;
     
-    setProcessingId(id);
+    setProcessingId(id.toString());
     try {
       const response = await fetch(API_URLS.DELETE_ORDER, {
         method: 'POST',
@@ -181,7 +178,7 @@ const App: React.FC = () => {
       if (response.ok) {
         setOrders(prev => prev.filter(o => o.id !== id));
         const nextExpanded = new Set(expandedRows);
-        nextExpanded.delete(id);
+        nextExpanded.delete(id.toString());
         setExpandedRows(nextExpanded);
       }
     } catch (error) {
@@ -194,7 +191,7 @@ const App: React.FC = () => {
   // API: Add New Order
   const handleAddNewOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newOrderForm.reference.trim()) return;
+    if (!newOrderForm.referencja.trim()) return;
 
     setIsAdding(true);
     try {
@@ -202,18 +199,18 @@ const App: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          referencja: newOrderForm.reference.toUpperCase(),
-          ilosc: newOrderForm.quantity,
-          typ: newOrderForm.type
+          referencja: newOrderForm.referencja.toUpperCase(),
+          ilosc: Number(newOrderForm.ilosc),
+          typ: newOrderForm.typ
         })
       });
 
       if (response.ok) {
         setToast({ message: 'Zgłoszenie dodane!', type: 'success' });
-        await fetchOrders(); // Refresh data
-        setActiveView('list'); // Redirect to list
-        setShowNewOrderModal(false); // Close modal
-        setNewOrderForm({ reference: '', quantity: 1, type: 'OST' }); // Reset form
+        await fetchOrders(); 
+        setActiveView('list'); 
+        setShowNewOrderModal(false); 
+        setNewOrderForm({ referencja: '', ilosc: 1, typ: 'OST' }); 
       } else {
         setToast({ message: 'Błąd podczas dodawania.', type: 'error' });
       }
@@ -225,26 +222,26 @@ const App: React.FC = () => {
     }
   };
 
+  // Logic: 48h filter
+  const isRecent = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    return diff < 48 * 60 * 60 * 1000;
+  };
+
   const stats: DashboardStats = useMemo(() => {
-    const todayOrders = orders.filter(o => o.timestamp.includes(todayDate));
-    const ostOrders = todayOrders.filter(o => o.type === 'OST');
-    const zapasOrders = todayOrders.filter(o => o.type === 'ZAPAS');
+    const totalOst = orders.filter(o => o.typ === 'OST').reduce((acc, curr) => acc + curr.ilosc, 0);
+    const totalZapas = orders.filter(o => o.typ === 'ZAPAS').reduce((acc, curr) => acc + curr.ilosc, 0);
+    const recentOrders = orders.filter(o => isRecent(o.data_utworzenia));
     
     return {
-      todayOrders: todayOrders.length,
-      pendingOrders: todayOrders.filter(o => o.status === 'UTWORZONE').length,
-      lastOST: ostOrders.length > 0 ? { 
-        ref: ostOrders[0].reference, 
-        qty: ostOrders[0].quantity, 
-        time: ostOrders[0].timestamp.split(' ')[0] 
-      } : { ref: '-', qty: 0, time: '-' },
-      lastZapas: zapasOrders.length > 0 ? { 
-        ref: zapasOrders[0].reference, 
-        qty: zapasOrders[0].quantity, 
-        time: zapasOrders[0].timestamp.split(' ')[0] 
-      } : { ref: '-', qty: 0, time: '-' }
+      todayOrders: recentOrders.length,
+      pendingOrders: recentOrders.filter(o => o.status === 'UTWORZONE').length,
+      totalOST: totalOst,
+      totalZapas: totalZapas
     };
-  }, [orders, todayDate]);
+  }, [orders]);
 
   const toggleRow = (id: string) => {
     const next = new Set(expandedRows);
@@ -255,13 +252,24 @@ const App: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const isToday = o.timestamp.includes(todayDate);
-      const matchesView = activeView === 'archive' ? !isToday : (activeView === 'list' ? isToday : true);
-      const matchesSearch = o.reference.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.toString().includes(searchQuery);
-      const matchesType = typeFilter === 'ALL' || o.type === typeFilter;
+      const recent = isRecent(o.data_utworzenia);
+      const matchesView = activeView === 'archive' ? !recent : (activeView === 'list' ? recent : true);
+      const matchesSearch = o.referencja.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.toString().includes(searchQuery);
+      const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
       return matchesView && matchesSearch && matchesType;
     });
-  }, [orders, searchQuery, typeFilter, activeView, todayDate]);
+  }, [orders, searchQuery, typeFilter, activeView]);
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleString('pl-PL', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
@@ -349,7 +357,7 @@ const App: React.FC = () => {
             <div className="flex flex-col">
               <h1 className="font-bold text-slate-800 text-base sm:text-lg">
                 {activeView === 'dashboard' ? 'Pulpit Sterowniczy' : 
-                 activeView === 'list' ? 'Lista Zgłoszeń' :
+                 activeView === 'list' ? 'Ostatnie Zgłoszenia' :
                  activeView === 'archive' ? 'Archiwum Zgłoszeń' :
                  activeView === 'reminders' ? 'Przypomnienia' : 'Ustawienia'}
               </h1>
@@ -392,10 +400,10 @@ const App: React.FC = () => {
               {/* Stats Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
-                  { label: 'Wszystkie Dziś', val: stats.todayOrders, sub: 'Suma zleceń', color: 'blue' },
-                  { label: 'Oczekujące', val: stats.pendingOrders, sub: 'Status: Utworzone', color: 'amber' },
-                  { label: 'Ostatni OST', val: stats.lastOST.ref, sub: `${stats.lastOST.qty} szt. • ${stats.lastOST.time}`, color: 'blue' },
-                  { label: 'Ostatni Zapas', val: stats.lastZapas.ref, sub: `${stats.lastZapas.qty} szt. • ${stats.lastZapas.time}`, color: 'indigo' },
+                  { label: 'Zgłoszenia (48h)', val: stats.todayOrders, sub: 'Ostatnie 2 dni', color: 'blue' },
+                  { label: 'Do realizacji (48h)', val: stats.pendingOrders, sub: 'Status: Utworzone', color: 'amber' },
+                  { label: 'Suma OST (Razem)', val: stats.totalOST, sub: 'Całkowita ilość', color: 'blue' },
+                  { label: 'Suma Zapas (Razem)', val: stats.totalZapas, sub: 'Całkowita ilość', color: 'indigo' },
                 ].map((s, idx) => (
                   <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
                     <div className="flex justify-between items-start mb-4">
@@ -415,27 +423,27 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                     <ClipboardList className="w-4 h-4 text-blue-600" />
-                    Ostatnie Aktywności (Dzisiaj)
+                    Ostatnie Aktywności (Ostatnie 48h)
                   </h2>
                   <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
-                  {orders.filter(o => o.timestamp.includes(todayDate)).slice(0, 4).map((o) => (
+                  {orders.filter(o => isRecent(o.data_utworzenia)).slice(0, 4).map((o) => (
                     <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id.toString()); }}>
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                          {o.type}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                          {o.typ}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-800">{o.reference}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o.id} • {o.timestamp.split(' ')[0]}</p>
+                          <p className="text-sm font-bold text-slate-800">{o.referencja}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o.id} • {formatDate(o.data_utworzenia)}</p>
                         </div>
                       </div>
                       <Badge type={o.status}>{o.status}</Badge>
                     </div>
                   ))}
-                  {orders.filter(o => o.timestamp.includes(todayDate)).length === 0 && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak dzisiejszych aktywności.</div>
+                  {orders.filter(o => isRecent(o.data_utworzenia)).length === 0 && (
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak nowych aktywności.</div>
                   )}
                 </div>
               </div>
@@ -484,7 +492,7 @@ const App: React.FC = () => {
                         <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Ilość</th>
                         <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Typ</th>
                         <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Status</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Data / Godzina</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Data Utworzenia</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -497,15 +505,15 @@ const App: React.FC = () => {
                               </div>
                             </td>
                             <td className="px-6 py-4 text-sm font-bold text-slate-500">{o.id}</td>
-                            <td className="px-6 py-4 text-sm font-black text-slate-900">{o.reference}</td>
-                            <td className="px-6 py-4 text-sm font-black text-slate-800">{o.quantity}</td>
+                            <td className="px-6 py-4 text-sm font-black text-slate-900">{o.referencja}</td>
+                            <td className="px-6 py-4 text-sm font-black text-slate-800">{o.ilosc}</td>
                             <td className="px-6 py-4">
-                              <Badge type={o.type}>{o.type}</Badge>
+                              <Badge type={o.typ}>{o.typ}</Badge>
                             </td>
                             <td className="px-6 py-4 text-center">
                               <Badge type={o.status}>{o.status}</Badge>
                             </td>
-                            <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right tabular-nums">{o.timestamp}</td>
+                            <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right tabular-nums">{formatDate(o.data_utworzenia)}</td>
                           </tr>
                           
                           {/* Desktop Expandable Content */}
@@ -518,15 +526,15 @@ const App: React.FC = () => {
                                     <div className="space-y-2">
                                       <div className="flex justify-between border-b border-slate-200 pb-1">
                                         <span className="text-xs text-slate-500 font-medium">Referencja produktu:</span>
-                                        <span className="text-xs font-black">{o.reference}</span>
+                                        <span className="text-xs font-black">{o.referencja}</span>
                                       </div>
                                       <div className="flex justify-between border-b border-slate-200 pb-1">
                                         <span className="text-xs text-slate-500 font-medium">Ilość zamówiona:</span>
-                                        <span className="text-xs font-black">{o.quantity} szt.</span>
+                                        <span className="text-xs font-black">{o.ilosc} szt.</span>
                                       </div>
                                       <div className="flex justify-between border-b border-slate-200 pb-1">
                                         <span className="text-xs text-slate-500 font-medium">Typ zlecenia:</span>
-                                        <span className="text-xs font-black">{o.type}</span>
+                                        <span className="text-xs font-black">{o.typ}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -535,11 +543,11 @@ const App: React.FC = () => {
                                     <div className="space-y-2">
                                       <div className="flex justify-between border-b border-slate-200 pb-1">
                                         <span className="text-xs text-slate-500 font-medium">Data rejestracji:</span>
-                                        <span className="text-xs font-black">{o.timestamp.split(' ')[1]}</span>
+                                        <span className="text-xs font-black">{formatDate(o.data_utworzenia)}</span>
                                       </div>
                                       <div className="flex justify-between border-b border-slate-200 pb-1">
-                                        <span className="text-xs text-slate-500 font-medium">Czas utworzenia:</span>
-                                        <span className="text-xs font-black">{o.timestamp.split(' ')[0]}</span>
+                                        <span className="text-xs text-slate-500 font-medium">Status systemowy:</span>
+                                        <span className="text-xs font-black uppercase tracking-widest">{o.status}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -549,7 +557,7 @@ const App: React.FC = () => {
                                       <div className="flex gap-2">
                                         <button 
                                           disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
-                                          onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id.toString()); }}
+                                          onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
                                           className={`flex-1 h-11 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${
                                             o.status === 'ZATWIERDZONE' 
                                               ? 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none cursor-default'
@@ -562,7 +570,7 @@ const App: React.FC = () => {
                                         
                                         <button 
                                           disabled={processingId === o.id.toString()}
-                                          onClick={(e) => { e.stopPropagation(); handleKasuj(o.id.toString()); }}
+                                          onClick={(e) => { e.stopPropagation(); handleKasuj(o.id); }}
                                           className="flex-1 bg-red-600 hover:bg-red-700 text-white h-11 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/10 active:scale-95 transition-all"
                                         >
                                           {processingId === o.id.toString() ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} 
@@ -592,12 +600,12 @@ const App: React.FC = () => {
                     <div key={o.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all ${expandedRows.has(o.id.toString()) ? 'ring-2 ring-blue-500/20' : ''}`}>
                       <div className="p-5 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 ${o.type === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                            {o.type}
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {o.typ}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-black text-slate-900 truncate">{o.reference}</p>
-                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{o.id} • {o.quantity} SZT.</p>
+                            <p className="text-sm font-black text-slate-900 truncate">{o.referencja}</p>
+                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{o.id} • {o.ilosc} SZT.</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -613,19 +621,19 @@ const App: React.FC = () => {
                           <div className="h-[1px] bg-slate-100"></div>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Data Rejestracji</p>
-                              <p className="text-xs font-bold text-slate-800">{o.timestamp}</p>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Data Utworzenia</p>
+                              <p className="text-xs font-bold text-slate-800">{formatDate(o.data_utworzenia)}</p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Typ Zlecenia</p>
-                              <p className="text-xs font-bold text-slate-800">{o.type}</p>
+                              <p className="text-xs font-bold text-slate-800">{o.typ}</p>
                             </div>
                           </div>
                           
                           <div className="flex gap-2">
                             <button 
                               disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
-                              onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id.toString()); }}
+                              onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
                               className={`flex-1 h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 ${
                                 o.status === 'ZATWIERDZONE' 
                                   ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default'
@@ -637,7 +645,7 @@ const App: React.FC = () => {
                             </button>
                             <button 
                               disabled={processingId === o.id.toString()}
-                              onClick={(e) => { e.stopPropagation(); handleKasuj(o.id.toString()); }}
+                              onClick={(e) => { e.stopPropagation(); handleKasuj(o.id); }}
                               className="flex-1 bg-red-600 text-white h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
                             >
                               {processingId === o.id.toString() ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} 
@@ -720,8 +728,8 @@ const App: React.FC = () => {
                     type="text" 
                     autoFocus
                     required
-                    value={newOrderForm.reference}
-                    onChange={(e) => setNewOrderForm(f => ({ ...f, reference: e.target.value }))}
+                    value={newOrderForm.referencja}
+                    onChange={(e) => setNewOrderForm(f => ({ ...f, referencja: e.target.value }))}
                     className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:normal-case" 
                     placeholder="Np. 2M3390" 
                   />
@@ -735,8 +743,8 @@ const App: React.FC = () => {
                     type="number" 
                     required
                     min="1"
-                    value={newOrderForm.quantity}
-                    onChange={(e) => setNewOrderForm(f => ({ ...f, quantity: parseInt(e.target.value) || 1 }))}
+                    value={newOrderForm.ilosc}
+                    onChange={(e) => setNewOrderForm(f => ({ ...f, ilosc: parseInt(e.target.value) || 1 }))}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
                     placeholder="1" 
                   />
@@ -744,8 +752,8 @@ const App: React.FC = () => {
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Typ</label>
                   <select 
-                    value={newOrderForm.type}
-                    onChange={(e) => setNewOrderForm(f => ({ ...f, type: e.target.value as OrderType }))}
+                    value={newOrderForm.typ}
+                    onChange={(e) => setNewOrderForm(f => ({ ...f, typ: e.target.value as OrderType }))}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all appearance-none cursor-pointer"
                   >
                     <option value="OST">OST</option>
