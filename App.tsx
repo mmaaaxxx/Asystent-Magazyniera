@@ -128,11 +128,17 @@ const App: React.FC = () => {
     try {
       const response = await fetch(API_URLS.GET_ORDERS);
       const data = await response.json();
-      // Ensure ilosc is treated as a number
+      
+      // DEBUG: LOG SUROWE DANE
+      console.log('SUROWE DANE:', data);
+
+      // Map and ensure ilosc is number
       const mappedData = (Array.isArray(data) ? data : []).map((o: any) => ({
         ...o,
         ilosc: Number(o.ilosc)
       }));
+      
+      // Bezpośrednie przypisanie bez filtrowania daty (na czas debugowania)
       setOrders(mappedData);
     } catch (error) {
       console.error('Error fetching orders:', error);
@@ -222,22 +228,13 @@ const App: React.FC = () => {
     }
   };
 
-  // Logic: 48h filter
-  const isRecent = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    return diff < 48 * 60 * 60 * 1000;
-  };
-
   const stats: DashboardStats = useMemo(() => {
     const totalOst = orders.filter(o => o.typ === 'OST').reduce((acc, curr) => acc + curr.ilosc, 0);
     const totalZapas = orders.filter(o => o.typ === 'ZAPAS').reduce((acc, curr) => acc + curr.ilosc, 0);
-    const recentOrders = orders.filter(o => isRecent(o.data_utworzenia));
     
     return {
-      todayOrders: recentOrders.length,
-      pendingOrders: recentOrders.filter(o => o.status === 'UTWORZONE').length,
+      todayOrders: orders.length,
+      pendingOrders: orders.filter(o => o.status === 'UTWORZONE').length,
       totalOST: totalOst,
       totalZapas: totalZapas
     };
@@ -252,15 +249,15 @@ const App: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const recent = isRecent(o.data_utworzenia);
-      const matchesView = activeView === 'archive' ? !recent : (activeView === 'list' ? recent : true);
-      const matchesSearch = o.referencja.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.toString().includes(searchQuery);
+      // Usunięto filtrowanie daty isRecent dla ułatwienia debugowania
+      const matchesSearch = o.referencja?.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.toString().includes(searchQuery);
       const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
-      return matchesView && matchesSearch && matchesType;
+      return matchesSearch && matchesType;
     });
-  }, [orders, searchQuery, typeFilter, activeView]);
+  }, [orders, searchQuery, typeFilter]);
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return "-";
     const d = new Date(dateStr);
     return d.toLocaleString('pl-PL', { 
       day: '2-digit', 
@@ -357,8 +354,8 @@ const App: React.FC = () => {
             <div className="flex flex-col">
               <h1 className="font-bold text-slate-800 text-base sm:text-lg">
                 {activeView === 'dashboard' ? 'Pulpit Sterowniczy' : 
-                 activeView === 'list' ? 'Ostatnie Zgłoszenia' :
-                 activeView === 'archive' ? 'Archiwum Zgłoszeń' :
+                 activeView === 'list' ? 'Lista Zgłoszeń (Debug)' :
+                 activeView === 'archive' ? 'Archiwum (Debug)' :
                  activeView === 'reminders' ? 'Przypomnienia' : 'Ustawienia'}
               </h1>
               <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -400,10 +397,10 @@ const App: React.FC = () => {
               {/* Stats Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
-                  { label: 'Zgłoszenia (48h)', val: stats.todayOrders, sub: 'Ostatnie 2 dni', color: 'blue' },
-                  { label: 'Do realizacji (48h)', val: stats.pendingOrders, sub: 'Status: Utworzone', color: 'amber' },
-                  { label: 'Suma OST (Razem)', val: stats.totalOST, sub: 'Całkowita ilość', color: 'blue' },
-                  { label: 'Suma Zapas (Razem)', val: stats.totalZapas, sub: 'Całkowita ilość', color: 'indigo' },
+                  { label: 'Wszystkie Rekordy', val: stats.todayOrders, sub: 'Liczba w bazie', color: 'blue' },
+                  { label: 'Status: Utworzone', val: stats.pendingOrders, sub: 'Do realizacji', color: 'amber' },
+                  { label: 'Suma OST', val: stats.totalOST, sub: 'Całkowita ilość', color: 'blue' },
+                  { label: 'Suma Zapas', val: stats.totalZapas, sub: 'Całkowita ilość', color: 'indigo' },
                 ].map((s, idx) => (
                   <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
                     <div className="flex justify-between items-start mb-4">
@@ -423,12 +420,12 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                     <ClipboardList className="w-4 h-4 text-blue-600" />
-                    Ostatnie Aktywności (Ostatnie 48h)
+                    Podgląd Danych
                   </h2>
                   <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
-                  {orders.filter(o => isRecent(o.data_utworzenia)).slice(0, 4).map((o) => (
+                  {orders.slice(0, 4).map((o) => (
                     <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id.toString()); }}>
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
@@ -442,14 +439,21 @@ const App: React.FC = () => {
                       <Badge type={o.status}>{o.status}</Badge>
                     </div>
                   ))}
-                  {orders.filter(o => isRecent(o.data_utworzenia)).length === 0 && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak nowych aktywności.</div>
+                  {orders.length === 0 && (
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych w bazie.</div>
                   )}
                 </div>
               </div>
             </div>
           ) : (activeView === 'list' || activeView === 'archive') && (
             <div className="animate-in slide-in-from-bottom-4 duration-500 flex flex-col h-full space-y-4">
+              
+              {/* DEBUG INFO */}
+              <div className="bg-blue-50 border border-blue-100 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 flex items-center justify-between">
+                <span>Tryb Debug: Filtry daty wyłączone.</span>
+                <span>{orders.length === 0 ? 'Otrzymano 0 rekordów z API' : `Wyświetlam ${filteredOrders.length} rekordów (z ${orders.length} ogółem)`}</span>
+              </div>
+
               {/* Controls */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full md:w-96 group">
