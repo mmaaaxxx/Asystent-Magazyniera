@@ -101,6 +101,7 @@ const App: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<'ALL' | OrderType>('ALL');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   
+  // 1. Czysty start: Pusta tablica zamiast null/undefined
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -129,19 +130,21 @@ const App: React.FC = () => {
     setApiError(null);
     try {
       const response = await fetch(API_URLS.GET_ORDERS);
-      if (!response.ok) throw new Error(`Błąd połączenia: ${response.status}`);
+      if (!response.ok) throw new Error(`Błąd: ${response.status}`);
       
       const data = await response.json();
       
-      // Prosta logika dla płaskiej tablicy [{id:1,...}, {id:2,...}]
+      // 2. Pobieranie: Bezpośrednie ustawienie tablicy
       const list = Array.isArray(data) ? data : [];
+      
+      // Mapowanie dla bezpieczeństwa pól i sortowanie (najnowsze góra)
       const mapped = list.map((o: any) => ({
         id: o.id,
-        referencja: o.referencja,
+        referencja: o.referencja || 'BRAK',
         ilosc: Number(o.ilosc) || 0,
-        typ: o.typ,
+        typ: o.typ || 'OST',
         status: o.status || 'UTWORZONE',
-        data_utworzenia: o.data_utworzenia
+        data_utworzenia: o.data_utworzenia || ''
       })).sort((a, b) => Number(b.id) - Number(a.id));
 
       setOrders(mapped);
@@ -237,12 +240,12 @@ const App: React.FC = () => {
   };
 
   const stats: DashboardStats = useMemo(() => {
-    const totalOst = orders.filter(o => o.typ === 'OST').reduce((acc, curr) => acc + curr.ilosc, 0);
-    const totalZapas = orders.filter(o => o.typ === 'ZAPAS').reduce((acc, curr) => acc + curr.ilosc, 0);
+    const totalOst = (orders || []).filter(o => o && o.typ === 'OST').reduce((acc, curr) => acc + (curr.ilosc || 0), 0);
+    const totalZapas = (orders || []).filter(o => o && o.typ === 'ZAPAS').reduce((acc, curr) => acc + (curr.ilosc || 0), 0);
     
     return {
-      todayOrders: orders.length,
-      pendingOrders: orders.filter(o => o.status === 'UTWORZONE').length,
+      todayOrders: (orders || []).length,
+      pendingOrders: (orders || []).filter(o => o && o.status === 'UTWORZONE').length,
       totalOST: totalOst,
       totalZapas: totalZapas
     };
@@ -256,7 +259,8 @@ const App: React.FC = () => {
   };
 
   const filteredOrders = useMemo(() => {
-    return orders.filter(o => {
+    return (orders || []).filter(o => {
+      if (!o) return false;
       const matchesSearch = (o.referencja?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (o.id?.toString() || '').includes(searchQuery);
       const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
@@ -440,21 +444,22 @@ const App: React.FC = () => {
                   <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Pełna lista</button>
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
-                  {orders.slice(0, 4).map((o) => (
-                    <div key={o.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o.id.toString()); }}>
+                  {/* Bezpieczne renderowanie (fallback || []) */}
+                  {(orders?.slice(0, 4) || []).map((o) => (
+                    <div key={o?.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o?.id?.toString() || ''); }}>
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                          {o.typ}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o?.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                          {o?.typ}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-slate-800">{o.referencja}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o.id} • {formatDate(o.data_utworzenia)}</p>
+                          <p className="text-sm font-bold text-slate-800">{o?.referencja}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o?.id} • {formatDate(o?.data_utworzenia || '')}</p>
                         </div>
                       </div>
-                      <Badge type={o.status}>{o.status}</Badge>
+                      <Badge type={o?.status || ''}>{o?.status || ''}</Badge>
                     </div>
                   ))}
-                  {orders.length === 0 && !isLoading && (
+                  {(orders || []).length === 0 && !isLoading && (
                     <div className="p-8 text-center text-slate-400 text-sm italic">Brak zgłoszeń.</div>
                   )}
                 </div>
@@ -506,37 +511,38 @@ const App: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredOrders.map((o) => (
-                        <React.Fragment key={o.id}>
-                          <tr className="hover:bg-blue-50/30 cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
+                      {/* Bezpieczne renderowanie (fallback || []) */}
+                      {(filteredOrders || []).map((o) => (
+                        <React.Fragment key={o?.id}>
+                          <tr className="hover:bg-blue-50/30 cursor-pointer" onClick={() => toggleRow(o?.id?.toString() || '')}>
                             <td className="px-4 py-4 text-center">
-                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedRows.has(o?.id?.toString() || '') ? 'rotate-180' : ''}`} />
                             </td>
-                            <td className="px-6 py-4 text-sm font-bold text-slate-500">{o.id}</td>
-                            <td className="px-6 py-4 text-sm font-black text-slate-900">{o.referencja}</td>
-                            <td className="px-6 py-4 text-sm font-black text-slate-800">{o.ilosc}</td>
+                            <td className="px-6 py-4 text-sm font-bold text-slate-500">{o?.id}</td>
+                            <td className="px-6 py-4 text-sm font-black text-slate-900">{o?.referencja}</td>
+                            <td className="px-6 py-4 text-sm font-black text-slate-800">{o?.ilosc}</td>
                             <td className="px-6 py-4 text-center">
-                              <Badge type={o.status}>{o.status}</Badge>
+                              <Badge type={o?.status || ''}>{o?.status || ''}</Badge>
                             </td>
-                            <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right tabular-nums">{formatDate(o.data_utworzenia)}</td>
+                            <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right tabular-nums">{formatDate(o?.data_utworzenia || '')}</td>
                           </tr>
-                          {expandedRows.has(o.id.toString()) && (
+                          {expandedRows.has(o?.id?.toString() || '') && (
                             <tr className="bg-blue-50/20">
                               <td colSpan={6} className="px-12 py-6 border-l-4 border-blue-600">
                                 <div className="flex justify-between items-center max-w-2xl">
                                   <div className="space-y-1">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase">Typ: {o.typ}</p>
-                                    <p className="text-xs font-bold">Referencja: {o.referencja}</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase">Typ: {o?.typ}</p>
+                                    <p className="text-xs font-bold">Referencja: {o?.referencja}</p>
                                   </div>
                                   <div className="flex gap-2">
                                     <button 
-                                      disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
-                                      onClick={() => handleZatwierdz(o.id)}
+                                      disabled={o?.status === 'ZATWIERDZONE' || processingId === o?.id?.toString()}
+                                      onClick={() => handleZatwierdz(o?.id || '')}
                                       className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black disabled:opacity-50"
                                     >ZATWIERDŹ</button>
                                     <button 
-                                      disabled={processingId === o.id.toString()}
-                                      onClick={() => handleKasuj(o.id)}
+                                      disabled={processingId === o?.id?.toString()}
+                                      onClick={() => handleKasuj(o?.id || '')}
                                       className="px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-black"
                                     >KASUJ</button>
                                   </div>
@@ -552,35 +558,36 @@ const App: React.FC = () => {
 
                 {/* Mobile */}
                 <div className="lg:hidden space-y-4">
-                  {filteredOrders.map((o) => (
-                    <div key={o.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                      <div className="p-5 flex items-center justify-between" onClick={() => toggleRow(o.id.toString())}>
+                  {/* Bezpieczne renderowanie (fallback || []) */}
+                  {(filteredOrders || []).map((o) => (
+                    <div key={o?.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="p-5 flex items-center justify-between" onClick={() => toggleRow(o?.id?.toString() || '')}>
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                            {o.typ}
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs ${o?.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {o?.typ}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-black text-slate-900 truncate">{o.referencja}</p>
-                            <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{o.id} • {o.ilosc} SZT.</p>
+                            <p className="text-sm font-black text-slate-900 truncate">{o?.referencja}</p>
+                            <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{o?.id} • {o?.ilosc} SZT.</p>
                           </div>
                         </div>
-                        <ChevronDown className={`w-5 h-5 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`w-5 h-5 transition-transform ${expandedRows.has(o?.id?.toString() || '') ? 'rotate-180' : ''}`} />
                       </div>
-                      {expandedRows.has(o.id.toString()) && (
+                      {expandedRows.has(o?.id?.toString() || '') && (
                         <div className="px-5 pb-5 pt-1 space-y-4 border-t border-slate-50">
                           <div className="flex justify-between text-xs font-bold text-slate-500">
-                            <span>Status: {o.status}</span>
-                            <span>Data: {formatDate(o.data_utworzenia)}</span>
+                            <span>Status: {o?.status}</span>
+                            <span>Data: {formatDate(o?.data_utworzenia || '')}</span>
                           </div>
                           <div className="flex gap-2">
                             <button 
-                              disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
-                              onClick={() => handleZatwierdz(o.id)}
+                              disabled={o?.status === 'ZATWIERDZONE' || processingId === o?.id?.toString()}
+                              onClick={() => handleZatwierdz(o?.id || '')}
                               className="flex-1 bg-emerald-600 text-white h-12 rounded-xl text-xs font-black disabled:opacity-50"
                             >ZATWIERDŹ</button>
                             <button 
-                              disabled={processingId === o.id.toString()}
-                              onClick={() => handleKasuj(o.id)}
+                              disabled={processingId === o?.id?.toString()}
+                              onClick={() => handleKasuj(o?.id || '')}
                               className="flex-1 bg-red-600 text-white h-12 rounded-xl text-xs font-black"
                             >KASUJ</button>
                           </div>
@@ -588,7 +595,7 @@ const App: React.FC = () => {
                       )}
                     </div>
                   ))}
-                  {filteredOrders.length === 0 && !isLoading && (
+                  {(filteredOrders || []).length === 0 && !isLoading && (
                     <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń.</div>
                   )}
                 </div>
