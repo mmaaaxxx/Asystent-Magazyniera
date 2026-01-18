@@ -104,6 +104,7 @@ const App: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [debugRaw, setDebugRaw] = useState<string>("");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -131,47 +132,50 @@ const App: React.FC = () => {
       const response = await fetch(API_URLS.GET_ORDERS);
       
       if (!response.ok) {
-        throw new Error(`Błąd serwera: ${response.status}`);
+        throw new Error(`Błąd HTTP: ${response.status}`);
       }
 
       const rawResponse = await response.json();
-      console.log('Inteligentny Parser - Surowe dane:', rawResponse);
-
-      // --- Inteligentny Parser (Pancerny) ---
-      let rawArray: any[] = [];
       
-      // Obsługa formatu: [ { "data": [...] } ]
-      if (Array.isArray(rawResponse) && rawResponse.length > 0 && rawResponse[0].data && Array.isArray(rawResponse[0].data)) {
-        rawArray = rawResponse[0].data;
-      } 
-      // Obsługa formatu: { "data": [...] }
-      else if (rawResponse && rawResponse.data && Array.isArray(rawResponse.data)) {
-        rawArray = rawResponse.data;
-      } 
-      // Obsługa formatu: [...]
-      else if (Array.isArray(rawResponse)) {
-        rawArray = rawResponse;
-      } 
-      // Obsługa formatu: {...}
-      else if (rawResponse && typeof rawResponse === 'object') {
-        rawArray = [rawResponse];
+      // Widok debugowania - pierwsze 100 znaków
+      setDebugRaw(JSON.stringify(rawResponse).substring(0, 100));
+
+      // Uniwersalny Lokalizator Listy (Pancerny)
+      let finalRecords: any[] = [];
+      if (Array.isArray(rawResponse)) {
+        if (rawResponse[0] && Array.isArray(rawResponse[0].data)) {
+          finalRecords = rawResponse[0].data;
+        } else {
+          finalRecords = rawResponse;
+        }
+      } else if (rawResponse && Array.isArray(rawResponse.data)) {
+        finalRecords = rawResponse.data;
+      } else if (rawResponse && typeof rawResponse === 'object') {
+        finalRecords = [rawResponse];
       }
 
-      const mappedData = rawArray
+      // Bezpieczne mapowanie i sortowanie po ID (najnowsze góra)
+      const mappedData = finalRecords
+        .filter(item => item && typeof item === 'object')
         .map((o: any) => ({
-          id: o.id,
-          referencja: o.referencja,
+          id: o.id || '?',
+          referencja: o.referencja || 'BRAK',
           ilosc: Number(o.ilosc) || 0,
-          typ: o.typ,
-          status: o.status,
-          data_utworzenia: o.data_utworzenia
+          typ: o.typ || 'OST',
+          status: o.status || 'UTWORZONE',
+          data_utworzenia: o.data_utworzenia || ''
         }))
-        .sort((a, b) => Number(b.id) - Number(a.id));
+        .sort((a, b) => {
+          const idA = Number(a.id) || 0;
+          const idB = Number(b.id) || 0;
+          return idB - idA;
+        });
       
       setOrders(mappedData);
     } catch (error: any) {
       console.error('Błąd pobierania orders:', error);
-      setApiError(error.message || 'Błąd połączenia.');
+      setApiError(error.message);
+      alert("Błąd połączenia z API: " + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -321,7 +325,6 @@ const App: React.FC = () => {
         w-64 bg-slate-900 flex flex-col transition-all duration-300 ease-in-out transform
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        {/* Branding */}
         <div className="h-20 flex items-center px-6 shrink-0 border-b border-slate-800">
           <div className="h-8 px-2 bg-orange-600 rounded flex items-center justify-center font-black text-white text-[11px] tracking-tight shadow-lg shadow-orange-600/20 mr-3 uppercase">HAGER</div>
           <div className="flex flex-col">
@@ -330,7 +333,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Nav Container */}
         <nav className="flex-1 overflow-y-auto py-6 space-y-2">
           <SidebarItem 
             icon={<LayoutDashboard className="w-5 h-5" />} 
@@ -402,17 +404,13 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-3">
-            <button 
-              onClick={fetchOrders}
-              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-              title="Odśwież dane"
-            >
+            <button onClick={fetchOrders} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg">
               <Loader2 className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <div className="h-8 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
             <button 
               onClick={() => setShowNewOrderModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-500/20"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
             >
               <PlusSquare className="w-4 h-4" />
               <span className="hidden sm:inline">Nowe Zgłoszenie</span>
@@ -420,12 +418,19 @@ const App: React.FC = () => {
           </div>
         </header>
 
+        {/* Debug Raw Data Bar */}
+        {debugRaw && (
+          <div className="bg-slate-800 text-slate-400 px-4 py-1 text-[9px] font-mono truncate border-b border-slate-700">
+            DEBUG: {debugRaw}
+          </div>
+        )}
+
         {/* API Error Banner */}
         {apiError && (
           <div className="bg-red-600 text-white px-6 py-3 text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top duration-300">
             <AlertCircle className="w-5 h-5" />
             <span>BŁĄD POŁĄCZENIA: {apiError}</span>
-            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline font-black">PONÓW PRÓBĘ</button>
+            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline font-black uppercase">PONÓW PRÓBĘ</button>
           </div>
         )}
 
@@ -435,7 +440,7 @@ const App: React.FC = () => {
           {isLoading && activeView !== 'dashboard' ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
-               <p className="text-sm font-medium">Aktualizacja danych...</p>
+               <p className="text-sm font-medium">Synchronizacja...</p>
             </div>
           ) : activeView === 'dashboard' ? (
             <div className="animate-in fade-in duration-500 space-y-8">
@@ -447,7 +452,7 @@ const App: React.FC = () => {
                   { label: 'Suma OST', val: stats.totalOST, sub: 'Całkowita ilość', color: 'blue' },
                   { label: 'Suma Zapas', val: stats.totalZapas, sub: 'Całkowita ilość', color: 'indigo' },
                 ].map((s, idx) => (
-                  <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group">
+                  <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                     <div className="flex justify-between items-start mb-4">
                       <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">{s.label}</p>
                       <div className={`p-2 rounded-lg bg-${s.color}-50 text-${s.color}-600`}>
@@ -467,7 +472,7 @@ const App: React.FC = () => {
                     <ClipboardList className="w-4 h-4 text-blue-600" />
                     Ostatnie Aktywności
                   </h2>
-                  <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
+                  <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Lista pełna</button>
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
                   {orders.slice(0, 4).map((o) => (
@@ -484,8 +489,8 @@ const App: React.FC = () => {
                       <Badge type={o.status}>{o.status}</Badge>
                     </div>
                   ))}
-                  {orders.length === 0 && !isLoading && !apiError && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych w bazie.</div>
+                  {orders.length === 0 && !isLoading && (
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych.</div>
                   )}
                 </div>
               </div>
@@ -493,14 +498,13 @@ const App: React.FC = () => {
           ) : (activeView === 'list' || activeView === 'archive') && (
             <div className="animate-in slide-in-from-bottom-4 duration-500 flex flex-col h-full space-y-4">
               
-              {/* Controls */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full md:w-96 group">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500" />
                   <input 
                     type="text" 
                     placeholder="Szukaj referencji lub ID..." 
-                    className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
@@ -522,9 +526,8 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Data Display */}
               <div className="flex-1 min-h-0">
-                {/* Desktop Table View */}
+                {/* Desktop View */}
                 <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -533,94 +536,43 @@ const App: React.FC = () => {
                         <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ID</th>
                         <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Referencja</th>
                         <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Ilość</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Typ</th>
                         <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Status</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Data Utworzenia</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Data</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredOrders.map((o) => (
                         <React.Fragment key={o.id}>
-                          <tr className={`hover:bg-blue-50/30 transition-colors cursor-pointer ${expandedRows.has(o.id.toString()) ? 'bg-blue-50/50' : ''}`} onClick={() => toggleRow(o.id.toString())}>
+                          <tr className="hover:bg-blue-50/30 cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
                             <td className="px-4 py-4">
-                              <div className={`p-1 rounded-md transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180 text-blue-600' : 'text-slate-400'}`}>
-                                <ChevronDown className="w-4 h-4" />
-                              </div>
+                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
                             </td>
                             <td className="px-6 py-4 text-sm font-bold text-slate-500">{o.id}</td>
                             <td className="px-6 py-4 text-sm font-black text-slate-900">{o.referencja}</td>
                             <td className="px-6 py-4 text-sm font-black text-slate-800">{o.ilosc}</td>
-                            <td className="px-6 py-4">
-                              <Badge type={o.typ}>{o.typ}</Badge>
-                            </td>
                             <td className="px-6 py-4 text-center">
                               <Badge type={o.status}>{o.status}</Badge>
                             </td>
                             <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right tabular-nums">{formatDate(o.data_utworzenia)}</td>
                           </tr>
-                          
-                          {/* Desktop Expandable Content */}
                           {expandedRows.has(o.id.toString()) && (
-                            <tr className="bg-blue-50/30">
-                              <td colSpan={7} className="px-16 py-8 border-l-4 border-blue-600 animate-in fade-in slide-in-from-top-1 duration-200">
-                                <div className="grid grid-cols-3 gap-12">
-                                  <div className="space-y-4">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kluczowe Parametry</h4>
-                                    <div className="space-y-2">
-                                      <div className="flex justify-between border-b border-slate-200 pb-1">
-                                        <span className="text-xs text-slate-500 font-medium">Referencja produktu:</span>
-                                        <span className="text-xs font-black">{o.referencja}</span>
-                                      </div>
-                                      <div className="flex justify-between border-b border-slate-200 pb-1">
-                                        <span className="text-xs text-slate-500 font-medium">Ilość zamówiona:</span>
-                                        <span className="text-xs font-black">{o.ilosc} szt.</span>
-                                      </div>
-                                      <div className="flex justify-between border-b border-slate-200 pb-1">
-                                        <span className="text-xs text-slate-500 font-medium">Typ zlecenia:</span>
-                                        <span className="text-xs font-black">{o.typ}</span>
-                                      </div>
-                                    </div>
+                            <tr className="bg-blue-50/20">
+                              <td colSpan={6} className="px-12 py-6 border-l-4 border-blue-600">
+                                <div className="flex justify-between items-center max-w-2xl">
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase">Typ: {o.typ}</p>
+                                    <p className="text-xs font-bold">Referencja: {o.referencja}</p>
                                   </div>
-                                  <div className="space-y-4">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Informacje Czasowe</h4>
-                                    <div className="space-y-2">
-                                      <div className="flex justify-between border-b border-slate-200 pb-1">
-                                        <span className="text-xs text-slate-500 font-medium">Data rejestracji:</span>
-                                        <span className="text-xs font-black">{formatDate(o.data_utworzenia)}</span>
-                                      </div>
-                                      <div className="flex justify-between border-b border-slate-200 pb-1">
-                                        <span className="text-xs text-slate-500 font-medium">Status systemowy:</span>
-                                        <span className="text-xs font-black uppercase tracking-widest">{o.status}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="space-y-4">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Obsługa</h4>
-                                    <div className="flex flex-col gap-3">
-                                      <div className="flex gap-2">
-                                        <button 
-                                          disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
-                                          onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
-                                          className={`flex-1 h-11 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${
-                                            o.status === 'ZATWIERDZONE' 
-                                              ? 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none cursor-default'
-                                              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/10'
-                                          }`}
-                                        >
-                                          {processingId === o.id.toString() ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} 
-                                          {o.status === 'ZATWIERDZONE' ? 'ZATWIERDZONO' : 'ZATWIERDŹ'}
-                                        </button>
-                                        
-                                        <button 
-                                          disabled={processingId === o.id.toString()}
-                                          onClick={(e) => { e.stopPropagation(); handleKasuj(o.id); }}
-                                          className="flex-1 bg-red-600 hover:bg-red-700 text-white h-11 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/10 active:scale-95 transition-all"
-                                        >
-                                          {processingId === o.id.toString() ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} 
-                                          KASUJ
-                                        </button>
-                                      </div>
-                                    </div>
+                                  <div className="flex gap-2">
+                                    <button 
+                                      disabled={o.status === 'ZATWIERDZONE'}
+                                      onClick={() => handleZatwierdz(o.id)}
+                                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black disabled:opacity-50"
+                                    >ZATWIERDŹ</button>
+                                    <button 
+                                      onClick={() => handleKasuj(o.id)}
+                                      className="px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-black"
+                                    >KASUJ</button>
                                   </div>
                                 </div>
                               </td>
@@ -628,72 +580,42 @@ const App: React.FC = () => {
                           )}
                         </React.Fragment>
                       ))}
-                      {filteredOrders.length === 0 && !isLoading && (
-                        <tr>
-                          <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-medium">Brak zgłoszeń.</td>
-                        </tr>
-                      )}
                     </tbody>
                   </table>
                 </div>
 
-                {/* Mobile/Tablet Card List View */}
+                {/* Mobile View */}
                 <div className="lg:hidden space-y-4">
                   {filteredOrders.map((o) => (
-                    <div key={o.id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all ${expandedRows.has(o.id.toString()) ? 'ring-2 ring-blue-500/20' : ''}`}>
-                      <div className="p-5 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
+                    <div key={o.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="p-5 flex items-center justify-between" onClick={() => toggleRow(o.id.toString())}>
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
                             {o.typ}
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-black text-slate-900 truncate">{o.referencja}</p>
-                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{o.id} • {o.ilosc} SZT.</p>
+                            <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{o.id} • {o.ilosc} SZT.</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <Badge type={o.status}>{o.status === 'UTWORZONE' ? 'UTW' : 'ZATW'}</Badge>
-                          <div className={`transition-transform duration-300 ${expandedRows.has(o.id.toString()) ? 'rotate-180 text-blue-600' : 'text-slate-300'}`}>
-                            <ChevronDown className="w-5 h-5" />
-                          </div>
-                        </div>
+                        <ChevronDown className={`w-5 h-5 ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
                       </div>
-
                       {expandedRows.has(o.id.toString()) && (
-                        <div className="px-5 pb-5 pt-1 space-y-6 animate-in slide-in-from-top-2">
-                          <div className="h-[1px] bg-slate-100"></div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Data Utworzenia</p>
-                              <p className="text-xs font-bold text-slate-800">{formatDate(o.data_utworzenia)}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Typ Zlecenia</p>
-                              <p className="text-xs font-bold text-slate-800">{o.typ}</p>
-                            </div>
+                        <div className="px-5 pb-5 pt-1 space-y-4 border-t border-slate-50">
+                          <div className="flex justify-between text-xs font-bold text-slate-500">
+                            <span>Status: {o.status}</span>
+                            <span>Data: {formatDate(o.data_utworzenia)}</span>
                           </div>
-                          
                           <div className="flex gap-2">
                             <button 
-                              disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
-                              onClick={(e) => { e.stopPropagation(); handleZatwierdz(o.id); }}
-                              className={`flex-1 h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 ${
-                                o.status === 'ZATWIERDZONE' 
-                                  ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default'
-                                  : 'bg-emerald-600 text-white'
-                              }`}
-                            >
-                              {processingId === o.id.toString() ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} 
-                              {o.status === 'ZATWIERDZONE' ? 'ZATWIERDZONO' : 'ZATWIERDŹ'}
-                            </button>
+                              disabled={o.status === 'ZATWIERDZONE'}
+                              onClick={() => handleZatwierdz(o.id)}
+                              className="flex-1 bg-emerald-600 text-white h-12 rounded-xl text-xs font-black disabled:opacity-50"
+                            >ZATWIERDŹ</button>
                             <button 
-                              disabled={processingId === o.id.toString()}
-                              onClick={(e) => { e.stopPropagation(); handleKasuj(o.id); }}
-                              className="flex-1 bg-red-600 text-white h-12 rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95"
-                            >
-                              {processingId === o.id.toString() ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} 
-                              KASUJ
-                            </button>
+                              onClick={() => handleKasuj(o.id)}
+                              className="flex-1 bg-red-600 text-white h-12 rounded-xl text-xs font-black"
+                            >KASUJ</button>
                           </div>
                         </div>
                       )}
@@ -706,98 +628,47 @@ const App: React.FC = () => {
               </div>
             </div>
           )}
-
-          {activeView === 'reminders' && (
-            <div className="animate-in fade-in duration-500 flex flex-col items-center justify-center py-20 text-center space-y-4">
-              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center text-amber-500 border border-amber-100 shadow-sm">
-                <Bell className="w-10 h-10" />
-              </div>
-              <div className="max-w-xs">
-                <h3 className="text-lg font-black text-slate-800">Brak aktywnych powiadomień</h3>
-                <p className="text-sm text-slate-500 font-medium mt-2 leading-relaxed">System nie wykrył żadnych pilnych przypomnień w Twojej strefie.</p>
-              </div>
-            </div>
-          )}
-
-          {activeView === 'settings' && (
-            <div className="animate-in slide-in-from-right-4 duration-500 max-w-2xl space-y-8">
-              <div className="space-y-4">
-                <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Informacje o Systemie</h2>
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="space-y-4">
-                    <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-2">
-                      <span>Wersja Oprogramowania</span>
-                      <span className="text-slate-900">v2.4.12-release</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-2">
-                      <span>Ostatnia Synchronizacja</span>
-                      <span className="text-slate-900">{new Date().toLocaleTimeString()}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                      <span>Środowisko</span>
-                      <span className="text-slate-900">PRODUKCJA (PL-TYCHY)</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </main>
       </div>
 
       {/* New Order Modal */}
       {showNewOrderModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowNewOrderModal(false)} />
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden transform animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">
-                  <PlusSquare className="w-4 h-4" />
-                </div>
-                <h3 className="font-black text-slate-800 text-sm uppercase tracking-tight">Nowe Zgłoszenie</h3>
-              </div>
-              <button onClick={() => setShowNewOrderModal(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowNewOrderModal(false)} />
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden transform animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="font-black text-slate-800 text-sm uppercase">Nowe Zgłoszenie</h3>
+              <button onClick={() => setShowNewOrderModal(false)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
             
             <form className="p-6 space-y-6" onSubmit={handleAddNewOrder}>
               <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Referencja Produktu</label>
-                <div className="relative group">
-                  <Box className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-blue-500" />
-                  <input 
-                    type="text" 
-                    autoFocus
-                    required
-                    value={newOrderForm.referencja}
-                    onChange={(e) => setNewOrderForm(f => ({ ...f, referencja: e.target.value }))}
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:normal-case" 
-                    placeholder="Np. 2M3390" 
-                  />
-                </div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase">Referencja</label>
+                <input 
+                  type="text" required autoFocus
+                  value={newOrderForm.referencja}
+                  onChange={(e) => setNewOrderForm(f => ({ ...f, referencja: e.target.value }))}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:ring-2 focus:ring-blue-500/20 outline-none" 
+                  placeholder="NP. 2M3390" 
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Ilość (SZT.)</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase">Ilość</label>
                   <input 
-                    type="number" 
-                    required
-                    min="1"
+                    type="number" required min="1"
                     value={newOrderForm.ilosc}
                     onChange={(e) => setNewOrderForm(f => ({ ...f, ilosc: parseInt(e.target.value) || 1 }))}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
-                    placeholder="1" 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none" 
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Typ</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase">Typ</label>
                   <select 
                     value={newOrderForm.typ}
                     onChange={(e) => setNewOrderForm(f => ({ ...f, typ: e.target.value as OrderType }))}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all appearance-none cursor-pointer"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none"
                   >
                     <option value="OST">OST</option>
                     <option value="ZAPAS">ZAPAS</option>
@@ -806,20 +677,9 @@ const App: React.FC = () => {
               </div>
 
               <div className="pt-4 flex gap-3">
-                <button 
-                  type="button" 
-                  onClick={() => setShowNewOrderModal(false)} 
-                  className="flex-1 px-4 py-3 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
-                >
-                  ANULUJ
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={isAdding}
-                  className="flex-[2] bg-blue-600 text-white px-6 py-3 rounded-xl text-xs font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-2"
-                >
-                  {isAdding && <Loader2 className="w-4 h-4 animate-spin" />}
-                  UTWÓRZ ZGŁOSZENIE
+                <button type="button" onClick={() => setShowNewOrderModal(false)} className="flex-1 px-4 py-3 text-xs font-black text-slate-500">ANULUJ</button>
+                <button type="submit" disabled={isAdding} className="flex-[2] bg-blue-600 text-white px-6 py-3 rounded-xl text-xs font-black shadow-lg shadow-blue-500/20 active:scale-95 transition-all">
+                  {isAdding ? 'DODAWANIE...' : 'UTWÓRZ ZGŁOSZENIE'}
                 </button>
               </div>
             </form>
@@ -827,13 +687,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Global Toast Notification */}
+      {/* Global Toast */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-bottom-8 duration-300">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-bottom-8">
           <div className={`px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 border ${
-            toast.type === 'success' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-red-600 text-white border-red-500'
+            toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
           }`}>
-            {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             <span className="text-sm font-bold">{toast.message}</span>
           </div>
         </div>
