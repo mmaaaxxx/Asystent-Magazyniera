@@ -104,7 +104,6 @@ const App: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [debugRaw, setDebugRaw] = useState<string>("");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -130,52 +129,25 @@ const App: React.FC = () => {
     setApiError(null);
     try {
       const response = await fetch(API_URLS.GET_ORDERS);
+      if (!response.ok) throw new Error(`Błąd połączenia: ${response.status}`);
       
-      if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
-      }
-
-      const rawResponse = await response.json();
+      const data = await response.json();
       
-      // Widok debugowania - pierwsze 100 znaków
-      setDebugRaw(JSON.stringify(rawResponse).substring(0, 100));
+      // Prosta logika dla płaskiej tablicy [{id:1,...}, {id:2,...}]
+      const list = Array.isArray(data) ? data : [];
+      const mapped = list.map((o: any) => ({
+        id: o.id,
+        referencja: o.referencja,
+        ilosc: Number(o.ilosc) || 0,
+        typ: o.typ,
+        status: o.status || 'UTWORZONE',
+        data_utworzenia: o.data_utworzenia
+      })).sort((a, b) => Number(b.id) - Number(a.id));
 
-      // Uniwersalny Lokalizator Listy (Pancerny)
-      let finalRecords: any[] = [];
-      if (Array.isArray(rawResponse)) {
-        if (rawResponse[0] && Array.isArray(rawResponse[0].data)) {
-          finalRecords = rawResponse[0].data;
-        } else {
-          finalRecords = rawResponse;
-        }
-      } else if (rawResponse && Array.isArray(rawResponse.data)) {
-        finalRecords = rawResponse.data;
-      } else if (rawResponse && typeof rawResponse === 'object') {
-        finalRecords = [rawResponse];
-      }
-
-      // Bezpieczne mapowanie i sortowanie po ID (najnowsze góra)
-      const mappedData = finalRecords
-        .filter(item => item && typeof item === 'object')
-        .map((o: any) => ({
-          id: o.id || '?',
-          referencja: o.referencja || 'BRAK',
-          ilosc: Number(o.ilosc) || 0,
-          typ: o.typ || 'OST',
-          status: o.status || 'UTWORZONE',
-          data_utworzenia: o.data_utworzenia || ''
-        }))
-        .sort((a, b) => {
-          const idA = Number(a.id) || 0;
-          const idB = Number(b.id) || 0;
-          return idB - idA;
-        });
-      
-      setOrders(mappedData);
+      setOrders(mapped);
     } catch (error: any) {
-      console.error('Błąd pobierania orders:', error);
+      console.error('Fetch error:', error);
       setApiError(error.message);
-      alert("Błąd połączenia z API: " + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -196,10 +168,10 @@ const App: React.FC = () => {
       });
       if (response.ok) {
         setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' } : o));
-        setToast({ message: 'Zgłoszenie zatwierdzone!', type: 'success' });
+        setToast({ message: 'Zatwierdzono zgłoszenie!', type: 'success' });
       }
     } catch (error) {
-      console.error('Error approving order:', error);
+      console.error('Approve error:', error);
     } finally {
       setProcessingId(null);
     }
@@ -221,10 +193,10 @@ const App: React.FC = () => {
         const nextExpanded = new Set(expandedRows);
         nextExpanded.delete(id.toString());
         setExpandedRows(nextExpanded);
-        setToast({ message: 'Zgłoszenie usunięte!', type: 'success' });
+        setToast({ message: 'Usunięto zgłoszenie!', type: 'success' });
       }
     } catch (error) {
-      console.error('Error deleting order:', error);
+      console.error('Delete error:', error);
     } finally {
       setProcessingId(null);
     }
@@ -248,16 +220,16 @@ const App: React.FC = () => {
       });
 
       if (response.ok) {
-        setToast({ message: 'Zgłoszenie dodane!', type: 'success' });
+        setToast({ message: 'Dodano zgłoszenie!', type: 'success' });
         await fetchOrders(); 
         setActiveView('list'); 
         setShowNewOrderModal(false); 
         setNewOrderForm({ referencja: '', ilosc: 1, typ: 'OST' }); 
       } else {
-        setToast({ message: 'Błąd podczas dodawania.', type: 'error' });
+        setToast({ message: 'Błąd dodawania.', type: 'error' });
       }
     } catch (error) {
-      console.error('Error adding order:', error);
+      console.error('Add error:', error);
       setToast({ message: 'Błąd sieci.', type: 'error' });
     } finally {
       setIsAdding(false);
@@ -418,19 +390,12 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Debug Raw Data Bar */}
-        {debugRaw && (
-          <div className="bg-slate-800 text-slate-400 px-4 py-1 text-[9px] font-mono truncate border-b border-slate-700">
-            DEBUG: {debugRaw}
-          </div>
-        )}
-
         {/* API Error Banner */}
         {apiError && (
           <div className="bg-red-600 text-white px-6 py-3 text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top duration-300">
             <AlertCircle className="w-5 h-5" />
-            <span>BŁĄD POŁĄCZENIA: {apiError}</span>
-            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline font-black uppercase">PONÓW PRÓBĘ</button>
+            <span>BŁĄD: {apiError}</span>
+            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline font-black uppercase">ODŚWIEŻ</button>
           </div>
         )}
 
@@ -440,7 +405,7 @@ const App: React.FC = () => {
           {isLoading && activeView !== 'dashboard' ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
-               <p className="text-sm font-medium">Synchronizacja...</p>
+               <p className="text-sm font-medium">Ładowanie...</p>
             </div>
           ) : activeView === 'dashboard' ? (
             <div className="animate-in fade-in duration-500 space-y-8">
@@ -472,7 +437,7 @@ const App: React.FC = () => {
                     <ClipboardList className="w-4 h-4 text-blue-600" />
                     Ostatnie Aktywności
                   </h2>
-                  <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Lista pełna</button>
+                  <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Pełna lista</button>
                 </div>
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
                   {orders.slice(0, 4).map((o) => (
@@ -490,7 +455,7 @@ const App: React.FC = () => {
                     </div>
                   ))}
                   {orders.length === 0 && !isLoading && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych.</div>
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak zgłoszeń.</div>
                   )}
                 </div>
               </div>
@@ -527,7 +492,7 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex-1 min-h-0">
-                {/* Desktop View */}
+                {/* Desktop */}
                 <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -544,7 +509,7 @@ const App: React.FC = () => {
                       {filteredOrders.map((o) => (
                         <React.Fragment key={o.id}>
                           <tr className="hover:bg-blue-50/30 cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
-                            <td className="px-4 py-4">
+                            <td className="px-4 py-4 text-center">
                               <ChevronDown className={`w-4 h-4 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
                             </td>
                             <td className="px-6 py-4 text-sm font-bold text-slate-500">{o.id}</td>
@@ -565,11 +530,12 @@ const App: React.FC = () => {
                                   </div>
                                   <div className="flex gap-2">
                                     <button 
-                                      disabled={o.status === 'ZATWIERDZONE'}
+                                      disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
                                       onClick={() => handleZatwierdz(o.id)}
                                       className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black disabled:opacity-50"
                                     >ZATWIERDŹ</button>
                                     <button 
+                                      disabled={processingId === o.id.toString()}
                                       onClick={() => handleKasuj(o.id)}
                                       className="px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-black"
                                     >KASUJ</button>
@@ -584,7 +550,7 @@ const App: React.FC = () => {
                   </table>
                 </div>
 
-                {/* Mobile View */}
+                {/* Mobile */}
                 <div className="lg:hidden space-y-4">
                   {filteredOrders.map((o) => (
                     <div key={o.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -598,7 +564,7 @@ const App: React.FC = () => {
                             <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{o.id} • {o.ilosc} SZT.</p>
                           </div>
                         </div>
-                        <ChevronDown className={`w-5 h-5 ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`w-5 h-5 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
                       </div>
                       {expandedRows.has(o.id.toString()) && (
                         <div className="px-5 pb-5 pt-1 space-y-4 border-t border-slate-50">
@@ -608,11 +574,12 @@ const App: React.FC = () => {
                           </div>
                           <div className="flex gap-2">
                             <button 
-                              disabled={o.status === 'ZATWIERDZONE'}
+                              disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
                               onClick={() => handleZatwierdz(o.id)}
                               className="flex-1 bg-emerald-600 text-white h-12 rounded-xl text-xs font-black disabled:opacity-50"
                             >ZATWIERDŹ</button>
                             <button 
+                              disabled={processingId === o.id.toString()}
                               onClick={() => handleKasuj(o.id)}
                               className="flex-1 bg-red-600 text-white h-12 rounded-xl text-xs font-black"
                             >KASUJ</button>
