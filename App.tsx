@@ -288,7 +288,7 @@ const App: React.FC = () => {
       </aside>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-30">
+        <header style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }} className="min-h-[4rem] h-auto bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-30">
           <div className="flex items-center gap-4">
             <button className="lg:hidden p-2" onClick={() => setMobileMenuOpen(true)}><Menu className="w-6 h-6" /></button>
             <h1 className="font-bold text-lg">
