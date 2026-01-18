@@ -101,7 +101,6 @@ const App: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<'ALL' | OrderType>('ALL');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   
-  // 1. Czysty start: Pusta tablica zamiast null/undefined
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -130,21 +129,19 @@ const App: React.FC = () => {
     setApiError(null);
     try {
       const response = await fetch(API_URLS.GET_ORDERS);
-      if (!response.ok) throw new Error(`Błąd: ${response.status}`);
+      if (!response.ok) throw new Error(`Błąd połączenia: ${response.status}`);
       
       const data = await response.json();
       
-      // 2. Pobieranie: Bezpośrednie ustawienie tablicy
+      // Prosta logika dla płaskiej tablicy [{id:1,...}, {id:2,...}]
       const list = Array.isArray(data) ? data : [];
-      
-      // Mapowanie dla bezpieczeństwa pól i sortowanie (najnowsze góra)
       const mapped = list.map((o: any) => ({
         id: o.id,
-        referencja: o.referencja || 'BRAK',
+        referencja: o.referencja,
         ilosc: Number(o.ilosc) || 0,
-        typ: o.typ || 'OST',
+        typ: o.typ,
         status: o.status || 'UTWORZONE',
-        data_utworzenia: o.data_utworzenia || ''
+        data_utworzenia: o.data_utworzenia
       })).sort((a, b) => Number(b.id) - Number(a.id));
 
       setOrders(mapped);
@@ -160,7 +157,7 @@ const App: React.FC = () => {
     fetchOrders();
   }, []);
 
-  // API: Approve Order
+  // API Actions
   const handleZatwierdz = async (id: string | number) => {
     setProcessingId(id.toString());
     try {
@@ -180,10 +177,8 @@ const App: React.FC = () => {
     }
   };
 
-  // API: Delete Order
   const handleKasuj = async (id: string | number) => {
     if (!window.confirm('Czy na pewno chcesz usunąć to zgłoszenie?')) return;
-    
     setProcessingId(id.toString());
     try {
       const response = await fetch(API_URLS.DELETE_ORDER, {
@@ -193,9 +188,6 @@ const App: React.FC = () => {
       });
       if (response.ok) {
         setOrders(prev => prev.filter(o => o.id !== id));
-        const nextExpanded = new Set(expandedRows);
-        nextExpanded.delete(id.toString());
-        setExpandedRows(nextExpanded);
         setToast({ message: 'Usunięto zgłoszenie!', type: 'success' });
       }
     } catch (error) {
@@ -205,11 +197,9 @@ const App: React.FC = () => {
     }
   };
 
-  // API: Add New Order
   const handleAddNewOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newOrderForm.referencja.trim()) return;
-
     setIsAdding(true);
     try {
       const response = await fetch(API_URLS.ADD_ORDER, {
@@ -221,35 +211,39 @@ const App: React.FC = () => {
           typ: newOrderForm.typ
         })
       });
-
       if (response.ok) {
         setToast({ message: 'Dodano zgłoszenie!', type: 'success' });
         await fetchOrders(); 
-        setActiveView('list'); 
         setShowNewOrderModal(false); 
         setNewOrderForm({ referencja: '', ilosc: 1, typ: 'OST' }); 
-      } else {
-        setToast({ message: 'Błąd dodawania.', type: 'error' });
       }
     } catch (error) {
       console.error('Add error:', error);
-      setToast({ message: 'Błąd sieci.', type: 'error' });
     } finally {
       setIsAdding(false);
     }
   };
 
   const stats: DashboardStats = useMemo(() => {
-    const totalOst = (orders || []).filter(o => o && o.typ === 'OST').reduce((acc, curr) => acc + (curr.ilosc || 0), 0);
-    const totalZapas = (orders || []).filter(o => o && o.typ === 'ZAPAS').reduce((acc, curr) => acc + (curr.ilosc || 0), 0);
+    const totalOst = orders.filter(o => o.typ === 'OST').reduce((acc, curr) => acc + curr.ilosc, 0);
+    const totalZapas = orders.filter(o => o.typ === 'ZAPAS').reduce((acc, curr) => acc + curr.ilosc, 0);
     
     return {
-      todayOrders: (orders || []).length,
-      pendingOrders: (orders || []).filter(o => o && o.status === 'UTWORZONE').length,
+      todayOrders: orders.length,
+      pendingOrders: orders.filter(o => o.status === 'UTWORZONE').length,
       totalOST: totalOst,
       totalZapas: totalZapas
     };
   }, [orders]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const matchesSearch = (o.referencja?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           (o.id?.toString() || '').includes(searchQuery);
+      const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
+      return matchesSearch && matchesType;
+    });
+  }, [orders, searchQuery, typeFilter]);
 
   const toggleRow = (id: string) => {
     const next = new Set(expandedRows);
@@ -258,402 +252,181 @@ const App: React.FC = () => {
     setExpandedRows(next);
   };
 
-  const filteredOrders = useMemo(() => {
-    return (orders || []).filter(o => {
-      if (!o) return false;
-      const matchesSearch = (o.referencja?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           (o.id?.toString() || '').includes(searchQuery);
-      const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
-      return matchesSearch && matchesType;
-    });
-  }, [orders, searchQuery, typeFilter]);
-
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "-";
     try {
-      const d = new Date(dateStr);
-      return d.toLocaleString('pl-PL', { 
-        day: '2-digit', 
-        month: '2-digit', 
-        year: 'numeric', 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-    } catch {
-      return dateStr;
-    }
+      return new Date(dateStr).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch { return dateStr; }
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
+    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-900 font-sans">
       
-      {/* Mobile Drawer Backdrop */}
-      {mobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden transition-opacity" 
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
+      {mobileMenuOpen && <div className="fixed inset-0 bg-slate-900/60 z-40 lg:hidden" onClick={() => setMobileMenuOpen(false)} />}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        w-64 bg-slate-900 flex flex-col transition-all duration-300 ease-in-out transform
-        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
-        <div className="h-20 flex items-center px-6 shrink-0 border-b border-slate-800">
-          <div className="h-8 px-2 bg-orange-600 rounded flex items-center justify-center font-black text-white text-[11px] tracking-tight shadow-lg shadow-orange-600/20 mr-3 uppercase">HAGER</div>
-          <div className="flex flex-col">
-            <span className="text-white font-bold leading-tight tracking-tight">Asystent</span>
-            <span className="text-slate-400 text-xs font-medium">Magazyniera</span>
-          </div>
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-slate-900 flex flex-col transition-transform lg:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="h-20 flex items-center px-6 border-b border-slate-800">
+          <div className="h-8 px-2 bg-orange-600 rounded flex items-center justify-center font-black text-white text-[11px] mr-3 uppercase">HAGER</div>
+          <div className="flex flex-col text-white font-bold"><span>Asystent</span><span className="text-slate-400 text-xs">Magazyniera</span></div>
         </div>
 
         <nav className="flex-1 overflow-y-auto py-6 space-y-2">
-          <SidebarItem 
-            icon={<LayoutDashboard className="w-5 h-5" />} 
-            label="Dashboard" 
-            isActive={activeView === 'dashboard'}
-            onClick={() => { setActiveView('dashboard'); setMobileMenuOpen(false); }}
-          />
-
-          <SidebarItem 
-            icon={<ClipboardList className="w-5 h-5" />} 
-            label="Zgłoszenia" 
-            hasSubmenu 
-            isOpen={sidebarSections.orders}
-            onClick={() => setSidebarSections(s => ({ ...s, orders: !s.orders }))}
-          >
-            <SubmenuItem 
-              label="Lista zgłoszeń" 
-              isActive={activeView === 'list'} 
-              onClick={() => { setActiveView('list'); setMobileMenuOpen(false); }} 
-            />
-            <SubmenuItem 
-              label="Archiwum" 
-              isActive={activeView === 'archive'} 
-              onClick={() => { setActiveView('archive'); setMobileMenuOpen(false); }} 
-            />
-            <SubmenuItem 
-              label="Nowe zgłoszenie" 
-              onClick={() => { setShowNewOrderModal(true); setMobileMenuOpen(false); }} 
-            />
+          <SidebarItem icon={<LayoutDashboard className="w-5 h-5" />} label="Dashboard" isActive={activeView === 'dashboard'} onClick={() => setActiveView('dashboard')} />
+          <SidebarItem icon={<ClipboardList className="w-5 h-5" />} label="Zgłoszenia" hasSubmenu isOpen={sidebarSections.orders} onClick={() => setSidebarSections(s => ({ ...s, orders: !s.orders }))}>
+            <SubmenuItem label="Lista zgłoszeń" isActive={activeView === 'list'} onClick={() => { setActiveView('list'); setMobileMenuOpen(false); }} />
+            <SubmenuItem label="Archiwum" isActive={activeView === 'archive'} onClick={() => { setActiveView('archive'); setMobileMenuOpen(false); }} />
+            <SubmenuItem label="Nowe zgłoszenie" onClick={() => { setShowNewOrderModal(true); setMobileMenuOpen(false); }} />
           </SidebarItem>
-
-          <SidebarItem 
-            icon={<Bell className="w-5 h-5" />} 
-            label="Przypomnienia" 
-            isActive={activeView === 'reminders'}
-            onClick={() => { setActiveView('reminders'); setMobileMenuOpen(false); }}
-          />
-
-          <SidebarItem 
-            icon={<Settings className="w-5 h-5" />} 
-            label="Ustawienia" 
-            isActive={activeView === 'settings'}
-            onClick={() => { setActiveView('settings'); setMobileMenuOpen(false); }}
-          />
+          <SidebarItem icon={<Bell className="w-5 h-5" />} label="Przypomnienia" isActive={activeView === 'reminders'} onClick={() => setActiveView('reminders')} />
+          <SidebarItem icon={<Settings className="w-5 h-5" />} label="Ustawienia" isActive={activeView === 'settings'} onClick={() => setActiveView('settings')} />
         </nav>
       </aside>
 
-      {/* Content Wrapper */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        
-        {/* Navbar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30 shrink-0">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-30">
           <div className="flex items-center gap-4">
-            <button className="lg:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => setMobileMenuOpen(true)}>
-              <Menu className="w-6 h-6" />
-            </button>
-            <div className="flex flex-col">
-              <h1 className="font-bold text-slate-800 text-base sm:text-lg">
-                {activeView === 'dashboard' ? 'Pulpit Sterowniczy' : 
-                 activeView === 'list' ? 'Lista Zgłoszeń' :
-                 activeView === 'archive' ? 'Archiwum' :
-                 activeView === 'reminders' ? 'Przypomnienia' : 'Ustawienia'}
-              </h1>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                <Calendar className="w-3 h-3" />
-                {new Date().toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </div>
-            </div>
+            <button className="lg:hidden p-2" onClick={() => setMobileMenuOpen(true)}><Menu className="w-6 h-6" /></button>
+            <h1 className="font-bold text-lg">{activeView === 'dashboard' ? 'Pulpit' : 'Zgłoszenia'}</h1>
           </div>
-          
           <div className="flex items-center gap-3">
-            <button onClick={fetchOrders} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg">
+            <button onClick={fetchOrders} className="p-2 text-slate-400 hover:text-blue-600">
               <Loader2 className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
-            <div className="h-8 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
-            <button 
-              onClick={() => setShowNewOrderModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
-            >
-              <PlusSquare className="w-4 h-4" />
-              <span className="hidden sm:inline">Nowe Zgłoszenie</span>
+            <button onClick={() => setShowNewOrderModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
+              <PlusSquare className="w-4 h-4" /> Nowe
             </button>
           </div>
         </header>
 
-        {/* API Error Banner */}
         {apiError && (
-          <div className="bg-red-600 text-white px-6 py-3 text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top duration-300">
-            <AlertCircle className="w-5 h-5" />
-            <span>BŁĄD: {apiError}</span>
-            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline font-black uppercase">ODŚWIEŻ</button>
+          <div className="bg-red-600 text-white px-6 py-2 text-xs font-bold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" /> Błąd: {apiError}
           </div>
         )}
 
-        {/* Scrollable Main */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-8 scroll-smooth">
-          
-          {isLoading && activeView !== 'dashboard' ? (
-            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-               <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
-               <p className="text-sm font-medium">Ładowanie...</p>
-            </div>
-          ) : activeView === 'dashboard' ? (
+        <main className="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth">
+          {activeView === 'dashboard' ? (
             <div className="animate-in fade-in duration-500 space-y-8">
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
-                  { label: 'Wszystkie Rekordy', val: stats.todayOrders, sub: 'Liczba w bazie', color: 'blue' },
-                  { label: 'Status: Utworzone', val: stats.pendingOrders, sub: 'Do realizacji', color: 'amber' },
-                  { label: 'Suma OST', val: stats.totalOST, sub: 'Całkowita ilość', color: 'blue' },
-                  { label: 'Suma Zapas', val: stats.totalZapas, sub: 'Całkowita ilość', color: 'indigo' },
+                  { label: 'Wszystkie', val: stats.todayOrders, color: 'blue' },
+                  { label: 'Utworzone', val: stats.pendingOrders, color: 'amber' },
+                  { label: 'Suma OST', val: stats.totalOST, color: 'blue' },
+                  { label: 'Suma Zapas', val: stats.totalZapas, color: 'indigo' },
                 ].map((s, idx) => (
-                  <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex justify-between items-start mb-4">
-                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">{s.label}</p>
-                      <div className={`p-2 rounded-lg bg-${s.color}-50 text-${s.color}-600`}>
-                        <Box className="w-4 h-4" />
-                      </div>
-                    </div>
-                    <p className="text-2xl font-black text-slate-900 mb-1">{s.val}</p>
-                    <p className="text-xs text-slate-400 font-medium">{s.sub}</p>
+                  <div key={idx} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <p className="text-slate-500 text-[10px] font-black uppercase mb-1">{s.label}</p>
+                    <p className="text-xl font-black">{s.val}</p>
                   </div>
                 ))}
               </div>
 
-              {/* Quick Actions / Recent Orders Preview */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                    <ClipboardList className="w-4 h-4 text-blue-600" />
-                    Ostatnie Aktywności
-                  </h2>
-                  <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Pełna lista</button>
-                </div>
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100">
-                  {/* Bezpieczne renderowanie (fallback || []) */}
-                  {(orders?.slice(0, 4) || []).map((o) => (
-                    <div key={o?.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => { setActiveView('list'); toggleRow(o?.id?.toString() || ''); }}>
-                      <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${o?.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                          {o?.typ}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-800">{o?.referencja}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{o?.id} • {formatDate(o?.data_utworzenia || '')}</p>
-                        </div>
-                      </div>
-                      <Badge type={o?.status || ''}>{o?.status || ''}</Badge>
-                    </div>
-                  ))}
-                  {(orders || []).length === 0 && !isLoading && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak zgłoszeń.</div>
-                  )}
-                </div>
+              <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+                <div className="p-4 border-b border-slate-200 font-bold text-sm">Ostatnie rekordy</div>
+                {orders.slice(0, 5).map(o => (
+                  <div key={o.id} className="p-4 flex justify-between items-center text-sm hover:bg-slate-50 transition-colors">
+                    <div className="font-bold">{o.referencja}</div>
+                    <Badge type={o.status}>{o.status}</Badge>
+                  </div>
+                ))}
               </div>
             </div>
-          ) : (activeView === 'list' || activeView === 'archive') && (
-            <div className="animate-in slide-in-from-bottom-4 duration-500 flex flex-col h-full space-y-4">
-              
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full md:w-96 group">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500" />
+          ) : (
+            <div className="animate-in slide-in-from-bottom-4 duration-500 space-y-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input 
-                    type="text" 
-                    placeholder="Szukaj referencji lub ID..." 
-                    className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    type="text" placeholder="Szukaj..." 
+                    className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm"
+                    value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                  <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">
-                    {['ALL', 'OST', 'ZAPAS'].map((type) => (
-                      <button 
-                        key={type}
-                        onClick={() => setTypeFilter(type as any)}
-                        className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          typeFilter === type ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        {type === 'ALL' ? 'WSZYSTKIE' : type}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <select 
+                  className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold"
+                  value={typeFilter} onChange={e => setTypeFilter(e.target.value as any)}
+                >
+                  <option value="ALL">WSZYSTKIE</option>
+                  <option value="OST">OST</option>
+                  <option value="ZAPAS">ZAPAS</option>
+                </select>
               </div>
 
-              <div className="flex-1 min-h-0">
-                {/* Desktop */}
-                <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50/80 border-b border-slate-200">
-                        <th className="px-4 py-4 w-12 text-center"></th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ID</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Referencja</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Ilość</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Status</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Data</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {/* Bezpieczne renderowanie (fallback || []) */}
-                      {(filteredOrders || []).map((o) => (
-                        <React.Fragment key={o?.id}>
-                          <tr className="hover:bg-blue-50/30 cursor-pointer" onClick={() => toggleRow(o?.id?.toString() || '')}>
-                            <td className="px-4 py-4 text-center">
-                              <ChevronDown className={`w-4 h-4 transition-transform ${expandedRows.has(o?.id?.toString() || '') ? 'rotate-180' : ''}`} />
-                            </td>
-                            <td className="px-6 py-4 text-sm font-bold text-slate-500">{o?.id}</td>
-                            <td className="px-6 py-4 text-sm font-black text-slate-900">{o?.referencja}</td>
-                            <td className="px-6 py-4 text-sm font-black text-slate-800">{o?.ilosc}</td>
-                            <td className="px-6 py-4 text-center">
-                              <Badge type={o?.status || ''}>{o?.status || ''}</Badge>
-                            </td>
-                            <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right tabular-nums">{formatDate(o?.data_utworzenia || '')}</td>
-                          </tr>
-                          {expandedRows.has(o?.id?.toString() || '') && (
-                            <tr className="bg-blue-50/20">
-                              <td colSpan={6} className="px-12 py-6 border-l-4 border-blue-600">
-                                <div className="flex justify-between items-center max-w-2xl">
-                                  <div className="space-y-1">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase">Typ: {o?.typ}</p>
-                                    <p className="text-xs font-bold">Referencja: {o?.referencja}</p>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <button 
-                                      disabled={o?.status === 'ZATWIERDZONE' || processingId === o?.id?.toString()}
-                                      onClick={() => handleZatwierdz(o?.id || '')}
-                                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black disabled:opacity-50"
-                                    >ZATWIERDŹ</button>
-                                    <button 
-                                      disabled={processingId === o?.id?.toString()}
-                                      onClick={() => handleKasuj(o?.id || '')}
-                                      className="px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-black"
-                                    >KASUJ</button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mobile */}
-                <div className="lg:hidden space-y-4">
-                  {/* Bezpieczne renderowanie (fallback || []) */}
-                  {(filteredOrders || []).map((o) => (
-                    <div key={o?.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                      <div className="p-5 flex items-center justify-between" onClick={() => toggleRow(o?.id?.toString() || '')}>
+              <div className="space-y-3">
+                {filteredOrders.length === 0 && !isLoading ? (
+                  <div className="text-center py-20 text-slate-400 text-sm">Brak danych.</div>
+                ) : (
+                  filteredOrders.map((o) => (
+                    <div key={o.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                      <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs ${o?.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                            {o?.typ}
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {o.typ}
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-black text-slate-900 truncate">{o?.referencja}</p>
-                            <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">{o?.id} • {o?.ilosc} SZT.</p>
+                          <div>
+                            <div className="font-black text-sm">{o.referencja}</div>
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{o.id} • {o.ilosc} SZT.</div>
                           </div>
                         </div>
-                        <ChevronDown className={`w-5 h-5 transition-transform ${expandedRows.has(o?.id?.toString() || '') ? 'rotate-180' : ''}`} />
+                        <div className="flex items-center gap-3">
+                          <Badge type={o.status}>{o.status}</Badge>
+                          <ChevronDown className={`w-5 h-5 text-slate-300 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
+                        </div>
                       </div>
-                      {expandedRows.has(o?.id?.toString() || '') && (
-                        <div className="px-5 pb-5 pt-1 space-y-4 border-t border-slate-50">
-                          <div className="flex justify-between text-xs font-bold text-slate-500">
-                            <span>Status: {o?.status}</span>
-                            <span>Data: {formatDate(o?.data_utworzenia || '')}</span>
-                          </div>
+                      {expandedRows.has(o.id.toString()) && (
+                        <div className="px-4 pb-4 pt-2 border-t border-slate-50 flex justify-between items-center gap-2">
+                          <div className="text-[10px] text-slate-400 font-bold">{formatDate(o.data_utworzenia)}</div>
                           <div className="flex gap-2">
                             <button 
-                              disabled={o?.status === 'ZATWIERDZONE' || processingId === o?.id?.toString()}
-                              onClick={() => handleZatwierdz(o?.id || '')}
-                              className="flex-1 bg-emerald-600 text-white h-12 rounded-xl text-xs font-black disabled:opacity-50"
+                              disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
+                              onClick={() => handleZatwierdz(o.id)}
+                              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black disabled:opacity-50"
                             >ZATWIERDŹ</button>
                             <button 
-                              disabled={processingId === o?.id?.toString()}
-                              onClick={() => handleKasuj(o?.id || '')}
-                              className="flex-1 bg-red-600 text-white h-12 rounded-xl text-xs font-black"
+                              disabled={processingId === o.id.toString()}
+                              onClick={() => handleKasuj(o.id)}
+                              className="px-4 py-2 bg-red-600 text-white rounded-lg text-[10px] font-black"
                             >KASUJ</button>
                           </div>
                         </div>
                       )}
                     </div>
-                  ))}
-                  {(filteredOrders || []).length === 0 && !isLoading && (
-                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń.</div>
-                  )}
-                </div>
+                  ))
+                )}
               </div>
             </div>
           )}
         </main>
       </div>
 
-      {/* New Order Modal */}
       {showNewOrderModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowNewOrderModal(false)} />
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden transform animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="font-black text-slate-800 text-sm uppercase">Nowe Zgłoszenie</h3>
-              <button onClick={() => setShowNewOrderModal(false)}><X className="w-5 h-5 text-slate-400" /></button>
-            </div>
-            
-            <form className="p-6 space-y-6" onSubmit={handleAddNewOrder}>
-              <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-500 uppercase">Referencja</label>
-                <input 
-                  type="text" required autoFocus
-                  value={newOrderForm.referencja}
-                  onChange={(e) => setNewOrderForm(f => ({ ...f, referencja: e.target.value }))}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:ring-2 focus:ring-blue-500/20 outline-none" 
-                  placeholder="NP. 2M3390" 
-                />
-              </div>
-
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-6 shadow-2xl animate-in zoom-in-95">
+            <h3 className="font-black text-sm uppercase">Nowe Zgłoszenie</h3>
+            <form onSubmit={handleAddNewOrder} className="space-y-4">
+              <input 
+                type="text" required autoFocus placeholder="REFERENCJA (np. 2M3390)"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase"
+                value={newOrderForm.referencja} onChange={e => setNewOrderForm(f => ({ ...f, referencja: e.target.value }))}
+              />
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-500 uppercase">Ilość</label>
-                  <input 
-                    type="number" required min="1"
-                    value={newOrderForm.ilosc}
-                    onChange={(e) => setNewOrderForm(f => ({ ...f, ilosc: parseInt(e.target.value) || 1 }))}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-slate-500 uppercase">Typ</label>
-                  <select 
-                    value={newOrderForm.typ}
-                    onChange={(e) => setNewOrderForm(f => ({ ...f, typ: e.target.value as OrderType }))}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none"
-                  >
-                    <option value="OST">OST</option>
-                    <option value="ZAPAS">ZAPAS</option>
-                  </select>
-                </div>
+                <input 
+                  type="number" required min="1" placeholder="ILOŚĆ"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                  value={newOrderForm.ilosc} onChange={e => setNewOrderForm(f => ({ ...f, ilosc: parseInt(e.target.value) || 1 }))}
+                />
+                <select 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                  value={newOrderForm.typ} onChange={e => setNewOrderForm(f => ({ ...f, typ: e.target.value as any }))}
+                >
+                  <option value="OST">OST</option>
+                  <option value="ZAPAS">ZAPAS</option>
+                </select>
               </div>
-
-              <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => setShowNewOrderModal(false)} className="flex-1 px-4 py-3 text-xs font-black text-slate-500">ANULUJ</button>
-                <button type="submit" disabled={isAdding} className="flex-[2] bg-blue-600 text-white px-6 py-3 rounded-xl text-xs font-black shadow-lg shadow-blue-500/20 active:scale-95 transition-all">
-                  {isAdding ? 'DODAWANIE...' : 'UTWÓRZ ZGŁOSZENIE'}
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowNewOrderModal(false)} className="flex-1 py-3 text-xs font-bold text-slate-500">ANULUJ</button>
+                <button type="submit" disabled={isAdding} className="flex-[2] bg-blue-600 text-white py-3 px-6 rounded-xl text-xs font-black">
+                  {isAdding ? 'DODAWANIE...' : 'DODAJ ZGŁOSZENIE'}
                 </button>
               </div>
             </form>
@@ -661,14 +434,9 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Global Toast */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-bottom-8">
-          <div className={`px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 border ${
-            toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-          }`}>
-            <span className="text-sm font-bold">{toast.message}</span>
-          </div>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-2xl animate-in slide-in-from-bottom-8">
+          {toast.message}
         </div>
       )}
     </div>
