@@ -131,7 +131,6 @@ const App: React.FC = () => {
       console.log('Inicjowanie pobierania z:', API_URLS.GET_ORDERS);
       const response = await fetch(API_URLS.GET_ORDERS);
       
-      // LOG PEŁNA ODPOWIEDŹ SERWERA
       console.log('PEŁNA ODPOWIEDŹ SERWERA (status):', response.status, response.statusText);
       
       if (!response.ok) {
@@ -139,25 +138,26 @@ const App: React.FC = () => {
       }
 
       const data = await response.json();
-      
-      // LOG SUROWE DANE
-      console.log('SUROWE DANE (JSON):', data);
+      console.log('SUROWE DANE Z SERWERA:', data);
 
-      // Weryfikacja formatu i przypisanie bezpośrednie
+      // Logika obsługi: tablica vs pojedynczy obiekt
+      let ordersArray: any[] = [];
       if (Array.isArray(data)) {
-        const mappedData = data.map((o: any) => ({
-          ...o,
-          ilosc: Number(o.ilosc) // Zabezpieczenie typu
-        }));
-        setOrders(mappedData);
-        console.log(`Przypisano ${mappedData.length} rekordów do stanu.`);
-      } else {
-        console.warn('Otrzymane dane nie są tablicą:', data);
-        setOrders([]);
+        ordersArray = data;
+      } else if (data && typeof data === 'object') {
+        ordersArray = [data]; // Zamień pojedynczy obiekt w tablicę
       }
+
+      const mappedData = ordersArray.map((o: any) => ({
+        ...o,
+        ilosc: Number(o.ilosc) || 0 // Zabezpieczenie typu
+      }));
+      
+      setOrders(mappedData);
+      console.log(`Załadowano ${mappedData.length} rekordów.`);
     } catch (error: any) {
       console.error('Błąd pobierania orders:', error);
-      setApiError(error.message || 'Wystąpił nieoczekiwany błąd sieci (możliwy CORS).');
+      setApiError(error.message || 'Wystąpił błąd sieci lub CORS.');
     } finally {
       setIsLoading(false);
     }
@@ -265,7 +265,8 @@ const App: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const matchesSearch = o.referencja?.toLowerCase().includes(searchQuery.toLowerCase()) || o.id.toString().includes(searchQuery);
+      const matchesSearch = o.referencja?.toString().toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           o.id?.toString().includes(searchQuery);
       const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
       return matchesSearch && matchesType;
     });
@@ -273,14 +274,18 @@ const App: React.FC = () => {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "-";
-    const d = new Date(dateStr);
-    return d.toLocaleString('pl-PL', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric', 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleString('pl-PL', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch {
+      return dateStr;
+    }
   };
 
   return (
@@ -404,7 +409,7 @@ const App: React.FC = () => {
           <div className="bg-red-600 text-white px-6 py-3 text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top duration-300">
             <AlertCircle className="w-5 h-5" />
             <span>BŁĄD POŁĄCZENIA: {apiError}</span>
-            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline">Ponów próbę</button>
+            <button onClick={fetchOrders} className="ml-auto underline hover:no-underline font-black">PONÓW PRÓBĘ</button>
           </div>
         )}
 
@@ -464,7 +469,7 @@ const App: React.FC = () => {
                     </div>
                   ))}
                   {orders.length === 0 && !isLoading && !apiError && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych w bazie (Otrzymano 0 rekordów).</div>
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Otrzymano 0 rekordów z API.</div>
                   )}
                 </div>
               </div>
@@ -685,7 +690,7 @@ const App: React.FC = () => {
                     </div>
                   ))}
                   {filteredOrders.length === 0 && !isLoading && (
-                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń w tej kategorii.</div>
+                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń (Wyświetlam 0 rekordów).</div>
                   )}
                 </div>
               </div>
