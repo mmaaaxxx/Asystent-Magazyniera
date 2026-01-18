@@ -57,7 +57,8 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "axios": "https://esm.sh/axios@^1.7.9"
   }
 }
 </script>
@@ -71,9 +72,7 @@
     <div id="root"></div>
     <script type="module" src="index.tsx"></script>
     <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
-        }
+        // Removed Service Worker registration to avoid origin mismatch errors in preview environments
     </script>
 </body>
 </html>

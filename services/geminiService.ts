@@ -1,9 +1,11 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Guideline: Always use `const ai = new GoogleGenAI({apiKey: process.env.API_KEY});`.
+// Recommended: Create a new GoogleGenAI instance right before making an API call.
 
 export const analyzeWarehouseImage = async (base64Image: string) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -14,6 +16,7 @@ export const analyzeWarehouseImage = async (base64Image: string) => {
         ]
       }
     });
+    // Guideline: The .text property directly returns the string output.
     return response.text;
   } catch (error) {
     console.error("Gemini Image Analysis failed:", error);
@@ -22,11 +25,13 @@ export const analyzeWarehouseImage = async (base64Image: string) => {
 };
 
 export const generateStockSummary = async (orders: any[]) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Na podstawie poniższej listy zgłoszeń przygotuj krótkie, punktowe podsumowanie stanu magazynowego i priorytetów na dzisiaj:\n${JSON.stringify(orders)}`,
       config: {
+        // Guideline: If latency is more important, you can disable thinking by setting thinkingBudget to 0.
         thinkingConfig: { thinkingBudget: 0 }
       }
     });

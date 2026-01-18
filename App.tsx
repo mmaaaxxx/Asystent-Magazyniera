@@ -1,5 +1,5 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
+import axios from 'axios';
 import { 
   LayoutDashboard, 
   ClipboardList, 
@@ -101,7 +101,8 @@ const App: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<'ALL' | OrderType>('ALL');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   
-  const [orders, setOrders] = useState<Order[]>([]);
+  // Naming aligned with user snippet: zgloszenia
+  const [zgloszenia, setZgloszenia] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -123,38 +124,40 @@ const App: React.FC = () => {
     }
   }, [toast]);
 
-  // API: Fetch Orders
-  const fetchOrders = async () => {
+  // API: Fetch Orders using Axios and handling flat array with optional .json wrapping
+  const fetchZgloszenia = async () => {
     setIsLoading(true);
     setApiError(null);
     try {
-      const response = await fetch(API_URLS.GET_ORDERS);
-      if (!response.ok) throw new Error(`Błąd połączenia: ${response.status}`);
+      console.log('Rozpoczynam pobieranie...');
+      const response = await axios.get(API_URLS.GET_ORDERS);
+      console.log('Otrzymane dane:', response.data);
       
-      const data = await response.json();
-      
-      // Prosta logika dla płaskiej tablicy [{id:1,...}, {id:2,...}]
-      const list = Array.isArray(data) ? data : [];
-      const mapped = list.map((o: any) => ({
-        id: o.id,
-        referencja: o.referencja,
-        ilosc: Number(o.ilosc) || 0,
-        typ: o.typ,
-        status: o.status || 'UTWORZONE',
-        data_utworzenia: o.data_utworzenia
-      })).sort((a, b) => Number(b.id) - Number(a.id));
+      let rawData = [];
+      if (Array.isArray(response.data)) {
+        rawData = response.data;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        rawData = response.data.data;
+      } else {
+        console.warn('Nieznany format danych, ustawiam puste.');
+        rawData = [];
+      }
 
-      setOrders(mapped);
+      // Safe unwrapping for n8n standard format: item.json || item
+      const mappedData = rawData.map((item: any) => item.json || item);
+      setZgloszenia(mappedData);
+
     } catch (error: any) {
-      console.error('Fetch error:', error);
-      setApiError(error.message);
+      console.error('Błąd połączenia:', error);
+      setApiError('Błąd pobierania danych. Sprawdź połączenie z n8n.');
+      setZgloszenia([]);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOrders();
+    fetchZgloszenia();
   }, []);
 
   // API Actions
@@ -167,7 +170,7 @@ const App: React.FC = () => {
         body: JSON.stringify({ id })
       });
       if (response.ok) {
-        setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' } : o));
+        setZgloszenia(prev => (prev || []).map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' as any } : o));
         setToast({ message: 'Zatwierdzono zgłoszenie!', type: 'success' });
       }
     } catch (error) {
@@ -187,7 +190,7 @@ const App: React.FC = () => {
         body: JSON.stringify({ id })
       });
       if (response.ok) {
-        setOrders(prev => prev.filter(o => o.id !== id));
+        setZgloszenia(prev => (prev || []).filter(o => o.id !== id));
         setToast({ message: 'Usunięto zgłoszenie!', type: 'success' });
       }
     } catch (error) {
@@ -213,7 +216,7 @@ const App: React.FC = () => {
       });
       if (response.ok) {
         setToast({ message: 'Dodano zgłoszenie!', type: 'success' });
-        await fetchOrders(); 
+        await fetchZgloszenia(); 
         setShowNewOrderModal(false); 
         setNewOrderForm({ referencja: '', ilosc: 1, typ: 'OST' }); 
       }
@@ -224,26 +227,27 @@ const App: React.FC = () => {
     }
   };
 
-  const stats: DashboardStats = useMemo(() => {
-    const totalOst = orders.filter(o => o.typ === 'OST').reduce((acc, curr) => acc + curr.ilosc, 0);
-    const totalZapas = orders.filter(o => o.typ === 'ZAPAS').reduce((acc, curr) => acc + curr.ilosc, 0);
+  const stats = useMemo(() => {
+    const list = zgloszenia || [];
+    const totalOst = list.filter(o => o.typ === 'OST').reduce((acc, curr) => acc + (Number(curr.ilosc) || 0), 0);
+    const totalZapas = list.filter(o => o.typ === 'ZAPAS').reduce((acc, curr) => acc + (Number(curr.ilosc) || 0), 0);
     
     return {
-      todayOrders: orders.length,
-      pendingOrders: orders.filter(o => o.status === 'UTWORZONE').length,
+      todayOrders: list.length,
+      pendingOrders: list.filter(o => o.status === 'UTWORZONE').length,
       totalOST: totalOst,
       totalZapas: totalZapas
     };
-  }, [orders]);
+  }, [zgloszenia]);
 
   const filteredOrders = useMemo(() => {
-    return orders.filter(o => {
+    return (zgloszenia || []).filter(o => {
       const matchesSearch = (o.referencja?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (o.id?.toString() || '').includes(searchQuery);
       const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
       return matchesSearch && matchesType;
     });
-  }, [orders, searchQuery, typeFilter]);
+  }, [zgloszenia, searchQuery, typeFilter]);
 
   const toggleRow = (id: string) => {
     const next = new Set(expandedRows);
@@ -289,7 +293,7 @@ const App: React.FC = () => {
             <h1 className="font-bold text-lg">{activeView === 'dashboard' ? 'Pulpit' : 'Zgłoszenia'}</h1>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={fetchOrders} className="p-2 text-slate-400 hover:text-blue-600">
+            <button onClick={fetchZgloszenia} className="p-2 text-slate-400 hover:text-blue-600">
               <Loader2 className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={() => setShowNewOrderModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
@@ -300,7 +304,7 @@ const App: React.FC = () => {
 
         {apiError && (
           <div className="bg-red-600 text-white px-6 py-2 text-xs font-bold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4" /> Błąd: {apiError}
+            <AlertCircle className="w-4 h-4" /> {apiError}
           </div>
         )}
 
@@ -323,10 +327,10 @@ const App: React.FC = () => {
 
               <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
                 <div className="p-4 border-b border-slate-200 font-bold text-sm">Ostatnie rekordy</div>
-                {orders.slice(0, 5).map(o => (
+                {(zgloszenia || []).slice(0, 5).map(o => (
                   <div key={o.id} className="p-4 flex justify-between items-center text-sm hover:bg-slate-50 transition-colors">
                     <div className="font-bold">{o.referencja}</div>
-                    <Badge type={o.status}>{o.status}</Badge>
+                    <Badge type={o.status || 'UTWORZONE'}>{o.status || 'UTWORZONE'}</Badge>
                   </div>
                 ))}
               </div>
@@ -353,45 +357,47 @@ const App: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                {filteredOrders.length === 0 && !isLoading ? (
+                {(filteredOrders || []).length === 0 && !isLoading ? (
                   <div className="text-center py-20 text-slate-400 text-sm">Brak danych.</div>
                 ) : (
-                  filteredOrders.map((o) => (
-                    <div key={o.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                      <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
-                        <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                            {o.typ}
+                  (filteredOrders || [])
+                    .sort((a, b) => Number(b.id) - Number(a.id))
+                    .map((o) => (
+                      <div key={o.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => toggleRow(o.id.toString())}>
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs ${o.typ === 'OST' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                              {o.typ}
+                            </div>
+                            <div>
+                              <div className="font-black text-sm">{o.referencja}</div>
+                              <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{o.id} • {o.ilosc} SZT.</div>
+                            </div>
                           </div>
-                          <div>
-                            <div className="font-black text-sm">{o.referencja}</div>
-                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{o.id} • {o.ilosc} SZT.</div>
+                          <div className="flex items-center gap-3">
+                            <Badge type={o.status || 'UTWORZONE'}>{o.status || 'UTWORZONE'}</Badge>
+                            <ChevronDown className={`w-5 h-5 text-slate-300 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <Badge type={o.status}>{o.status}</Badge>
-                          <ChevronDown className={`w-5 h-5 text-slate-300 transition-transform ${expandedRows.has(o.id.toString()) ? 'rotate-180' : ''}`} />
-                        </div>
+                        {expandedRows.has(o.id.toString()) && (
+                          <div className="px-4 pb-4 pt-2 border-t border-slate-50 flex justify-between items-center gap-2">
+                            <div className="text-[10px] text-slate-400 font-bold">{formatDate(o.data_utworzenia)}</div>
+                            <div className="flex gap-2">
+                              <button 
+                                disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
+                                onClick={() => handleZatwierdz(o.id)}
+                                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black disabled:opacity-50"
+                              >ZATWIERDŹ</button>
+                              <button 
+                                disabled={processingId === o.id.toString()}
+                                onClick={() => handleKasuj(o.id)}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg text-[10px] font-black"
+                              >KASUJ</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {expandedRows.has(o.id.toString()) && (
-                        <div className="px-4 pb-4 pt-2 border-t border-slate-50 flex justify-between items-center gap-2">
-                          <div className="text-[10px] text-slate-400 font-bold">{formatDate(o.data_utworzenia)}</div>
-                          <div className="flex gap-2">
-                            <button 
-                              disabled={o.status === 'ZATWIERDZONE' || processingId === o.id.toString()}
-                              onClick={() => handleZatwierdz(o.id)}
-                              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black disabled:opacity-50"
-                            >ZATWIERDŹ</button>
-                            <button 
-                              disabled={processingId === o.id.toString()}
-                              onClick={() => handleKasuj(o.id)}
-                              className="px-4 py-2 bg-red-600 text-white rounded-lg text-[10px] font-black"
-                            >KASUJ</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
+                    ))
                 )}
               </div>
             </div>
