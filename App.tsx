@@ -128,36 +128,36 @@ const App: React.FC = () => {
     setIsLoading(true);
     setApiError(null);
     try {
-      console.log('Inicjowanie pobierania z:', API_URLS.GET_ORDERS);
       const response = await fetch(API_URLS.GET_ORDERS);
       
-      console.log('PEŁNA ODPOWIEDŹ SERWERA (status):', response.status, response.statusText);
-      
       if (!response.ok) {
-        throw new Error(`Błąd serwera: ${response.status} ${response.statusText}`);
+        throw new Error(`Błąd serwera: ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log('SUROWE DANE Z SERWERA:', data);
+      const rawResponse = await response.json();
+      console.log('SUROWE DANE Z SERWERA:', rawResponse);
 
-      // Logika obsługi: tablica vs pojedynczy obiekt
-      let ordersArray: any[] = [];
-      if (Array.isArray(data)) {
-        ordersArray = data;
-      } else if (data && typeof data === 'object') {
-        ordersArray = [data]; // Zamień pojedynczy obiekt w tablicę
+      // Super Pancerny Parser
+      let rawArray: any[] = [];
+      if (rawResponse && rawResponse.data && Array.isArray(rawResponse.data)) {
+        rawArray = rawResponse.data;
+      } else if (Array.isArray(rawResponse)) {
+        rawArray = rawResponse;
+      } else if (rawResponse && typeof rawResponse === 'object') {
+        rawArray = [rawResponse];
       }
 
-      const mappedData = ordersArray.map((o: any) => ({
-        ...o,
-        ilosc: Number(o.ilosc) || 0 // Zabezpieczenie typu
-      }));
+      const mappedData = rawArray
+        .map((o: any) => ({
+          ...o,
+          ilosc: Number(o.ilosc) || 0
+        }))
+        .sort((a, b) => Number(b.id) - Number(a.id)); // Sortowanie: wyższe ID na górze
       
       setOrders(mappedData);
-      console.log(`Załadowano ${mappedData.length} rekordów.`);
     } catch (error: any) {
       console.error('Błąd pobierania orders:', error);
-      setApiError(error.message || 'Wystąpił błąd sieci lub CORS.');
+      setApiError(error.message || 'Błąd połączenia.');
     } finally {
       setIsLoading(false);
     }
@@ -265,8 +265,8 @@ const App: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const matchesSearch = o.referencja?.toString().toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           o.id?.toString().includes(searchQuery);
+      const matchesSearch = (o.referencja?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           (o.id?.toString() || '').includes(searchQuery);
       const matchesType = typeFilter === 'ALL' || o.typ === typeFilter;
       return matchesSearch && matchesType;
     });
@@ -449,7 +449,7 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                     <ClipboardList className="w-4 h-4 text-blue-600" />
-                    Podgląd Danych
+                    Ostatnie Aktywności
                   </h2>
                   <button onClick={() => setActiveView('list')} className="text-xs font-bold text-blue-600 hover:underline">Zobacz listę</button>
                 </div>
@@ -469,7 +469,7 @@ const App: React.FC = () => {
                     </div>
                   ))}
                   {orders.length === 0 && !isLoading && !apiError && (
-                    <div className="p-8 text-center text-slate-400 text-sm italic">Otrzymano 0 rekordów z API.</div>
+                    <div className="p-8 text-center text-slate-400 text-sm italic">Brak danych w bazie.</div>
                   )}
                 </div>
               </div>
@@ -477,12 +477,6 @@ const App: React.FC = () => {
           ) : (activeView === 'list' || activeView === 'archive') && (
             <div className="animate-in slide-in-from-bottom-4 duration-500 flex flex-col h-full space-y-4">
               
-              {/* DEBUG INFO */}
-              <div className="bg-blue-50 border border-blue-100 px-4 py-2 rounded-xl text-xs font-bold text-blue-600 flex items-center justify-between">
-                <span>Tryb Debug: Filtry daty wyłączone.</span>
-                <span>{orders.length === 0 && !isLoading ? 'Otrzymano 0 rekordów z API' : `Wyświetlam ${filteredOrders.length} rekordów (z ${orders.length} ogółem)`}</span>
-              </div>
-
               {/* Controls */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full md:w-96 group">
@@ -690,7 +684,7 @@ const App: React.FC = () => {
                     </div>
                   ))}
                   {filteredOrders.length === 0 && !isLoading && (
-                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń (Wyświetlam 0 rekordów).</div>
+                    <div className="py-20 text-center text-slate-400 text-sm font-medium">Brak zgłoszeń.</div>
                   )}
                 </div>
               </div>
