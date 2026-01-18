@@ -135,24 +135,38 @@ const App: React.FC = () => {
       }
 
       const rawResponse = await response.json();
-      console.log('SUROWE DANE Z SERWERA:', rawResponse);
+      console.log('Inteligentny Parser - Surowe dane:', rawResponse);
 
-      // Super Pancerny Parser
+      // --- Inteligentny Parser (Pancerny) ---
       let rawArray: any[] = [];
-      if (rawResponse && rawResponse.data && Array.isArray(rawResponse.data)) {
+      
+      // Obsługa formatu: [ { "data": [...] } ]
+      if (Array.isArray(rawResponse) && rawResponse.length > 0 && rawResponse[0].data && Array.isArray(rawResponse[0].data)) {
+        rawArray = rawResponse[0].data;
+      } 
+      // Obsługa formatu: { "data": [...] }
+      else if (rawResponse && rawResponse.data && Array.isArray(rawResponse.data)) {
         rawArray = rawResponse.data;
-      } else if (Array.isArray(rawResponse)) {
+      } 
+      // Obsługa formatu: [...]
+      else if (Array.isArray(rawResponse)) {
         rawArray = rawResponse;
-      } else if (rawResponse && typeof rawResponse === 'object') {
+      } 
+      // Obsługa formatu: {...}
+      else if (rawResponse && typeof rawResponse === 'object') {
         rawArray = [rawResponse];
       }
 
       const mappedData = rawArray
         .map((o: any) => ({
-          ...o,
-          ilosc: Number(o.ilosc) || 0
+          id: o.id,
+          referencja: o.referencja,
+          ilosc: Number(o.ilosc) || 0,
+          typ: o.typ,
+          status: o.status,
+          data_utworzenia: o.data_utworzenia
         }))
-        .sort((a, b) => Number(b.id) - Number(a.id)); // Sortowanie: wyższe ID na górze
+        .sort((a, b) => Number(b.id) - Number(a.id));
       
       setOrders(mappedData);
     } catch (error: any) {
@@ -178,6 +192,7 @@ const App: React.FC = () => {
       });
       if (response.ok) {
         setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' } : o));
+        setToast({ message: 'Zgłoszenie zatwierdzone!', type: 'success' });
       }
     } catch (error) {
       console.error('Error approving order:', error);
@@ -202,6 +217,7 @@ const App: React.FC = () => {
         const nextExpanded = new Set(expandedRows);
         nextExpanded.delete(id.toString());
         setExpandedRows(nextExpanded);
+        setToast({ message: 'Zgłoszenie usunięte!', type: 'success' });
       }
     } catch (error) {
       console.error('Error deleting order:', error);
@@ -419,7 +435,7 @@ const App: React.FC = () => {
           {isLoading && activeView !== 'dashboard' ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
-               <p className="text-sm font-medium">Pobieranie zgłoszeń...</p>
+               <p className="text-sm font-medium">Aktualizacja danych...</p>
             </div>
           ) : activeView === 'dashboard' ? (
             <div className="animate-in fade-in duration-500 space-y-8">
@@ -614,7 +630,7 @@ const App: React.FC = () => {
                       ))}
                       {filteredOrders.length === 0 && !isLoading && (
                         <tr>
-                          <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-medium">Brak zgłoszeń do wyświetlenia.</td>
+                          <td colSpan={7} className="px-6 py-20 text-center text-slate-400 font-medium">Brak zgłoszeń.</td>
                         </tr>
                       )}
                     </tbody>
