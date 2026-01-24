@@ -6,11 +6,15 @@
     <title>Asystent Magazyniera</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="manifest" href="public/manifest.json">
+    
+    <!-- iOS PWA meta tags and links -->
     <link rel="icon" type="image/png" href="public/icon.png">
     <link rel="apple-touch-icon" href="public/icon.png">
-    <meta name="theme-color" content="#4F6A88">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Asystent">
+    
+    <meta name="theme-color" content="#4F6A88">
     <style>
         :root {
             --safe-area-inset-top: env(safe-area-inset-top);
@@ -50,7 +54,9 @@
             width: 120px;
             height: 120px;
             object-fit: contain;
-            filter: brightness(0) invert(1); /* Ensure logo is visible on dark background */
+            /* Ensure logo is visible on blue background. 
+               If your icon.png is already colored/visible, you can adjust or remove this filter. */
+            filter: brightness(0) invert(1); 
         }
     </style>
 <script type="importmap">
