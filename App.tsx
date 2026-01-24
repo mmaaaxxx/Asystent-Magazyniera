@@ -129,7 +129,6 @@ const App: React.FC = () => {
     setApiError(null);
     try {
       const response = await axios.get(API_URLS.GET_ORDERS);
-      
       let rawData = [];
       if (Array.isArray(response.data)) {
         rawData = response.data;
@@ -138,12 +137,10 @@ const App: React.FC = () => {
       } else {
         rawData = [];
       }
-
       const mappedData = rawData.map((item: any) => item.json || item);
       setZgloszenia(mappedData);
-
     } catch (error: any) {
-      setApiError('Błąd pobierania danych. Sprawdź połączenie z n8n.');
+      setApiError('Błąd pobierania danych.');
       setZgloszenia([]);
     } finally {
       setIsLoading(false);
@@ -152,51 +149,52 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchZgloszenia();
-  }, []);
+  }, [activeView]);
 
   const stats = useMemo(() => {
     const list = zgloszenia || [];
+    const pending = list.filter(o => o.status !== 'ZATWIERDZONE');
+    const archived = list.filter(o => o.status === 'ZATWIERDZONE');
     return {
       total: list.length,
-      pending: list.filter(o => o.status !== 'ZATWIERDZONE').length,
-      archive: list.filter(o => o.status === 'ZATWIERDZONE').length
+      pending: pending.length,
+      archive: archived.length
     };
   }, [zgloszenia]);
 
   const handleZatwierdz = async (id: string | number) => {
     setProcessingId(id.toString());
     try {
-      const response = await fetch(API_URLS.APPROVE_ORDER, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
-      });
-      if (response.ok) {
-        setZgloszenia(prev => (prev || []).map(o => o.id === id ? { ...o, status: 'ZATWIERDZONE' as any } : o));
-        setToast({ message: 'Zatwierdzono zgłoszenie!', type: 'success' });
+      // Use explicit Number casting for database compatibility
+      const response = await axios.post(API_URLS.APPROVE_ORDER, { id: Number(id) });
+      if (response.status >= 200 && response.status < 300) {
+        setToast({ message: 'Zatwierdzono i zarchiwizowano zgłoszenie!', type: 'success' });
+        await fetchZgloszenia();
       }
     } catch (error) {
       console.error('Approve error:', error);
+      setToast({ message: 'Błąd podczas zatwierdzania.', type: 'error' });
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleKasuj = async (id: string | number) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć to zgłoszenie?')) return;
+    console.log('Próba usunięcia ID:', id);
     setProcessingId(id.toString());
     try {
-      const response = await fetch(API_URLS.DELETE_ORDER, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
-      });
-      if (response.ok) {
-        setZgloszenia(prev => (prev || []).filter(o => o.id !== id));
-        setToast({ message: 'Usunięto zgłoszenie!', type: 'success' });
+      // Use explicit Number casting for database compatibility
+      const response = await axios.post(API_URLS.DELETE_ORDER, { id: Number(id) });
+      if (response.status >= 200 && response.status < 300) {
+        setToast({ message: 'Zgłoszenie zostało usunięte z bazy danych.', type: 'success' });
+        await fetchZgloszenia();
+        setExpandedRows(new Set()); // Automatic row collapse upon success
+      } else {
+        throw new Error('Unexpected response status');
       }
     } catch (error) {
       console.error('Delete error:', error);
+      setToast({ message: 'Błąd podczas usuwania z bazy.', type: 'error' });
     } finally {
       setProcessingId(null);
     }
@@ -206,21 +204,14 @@ const App: React.FC = () => {
     e.preventDefault();
     if (!newOrderForm.referencja.trim()) return;
     setIsAdding(true);
-    
-    // Quantity for ZAPAS is always 0
     const finalQuantity = newOrderForm.typ === 'ZAPAS' ? 0 : Number(newOrderForm.ilosc);
-
     try {
-      const response = await fetch(API_URLS.ADD_ORDER, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          referencja: newOrderForm.referencja.toUpperCase(),
-          ilosc: finalQuantity,
-          typ: newOrderForm.typ
-        })
+      const response = await axios.post(API_URLS.ADD_ORDER, {
+        referencja: newOrderForm.referencja.toUpperCase(),
+        ilosc: finalQuantity,
+        typ: newOrderForm.typ
       });
-      if (response.ok) {
+      if (response.status >= 200 && response.status < 300) {
         setToast({ message: 'Dodano zgłoszenie!', type: 'success' });
         await fetchZgloszenia(); 
         setShowNewOrderModal(false); 
@@ -235,18 +226,17 @@ const App: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     const list = zgloszenia || [];
+    const isArchiveView = activeView === 'archive';
+    
     return list.filter(o => {
       const matchesSearch = (o.referencja?.toString() || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (o.id?.toString() || '').includes(searchQuery);
       
-      if (activeView === 'archive') {
-        // Only APPROVED orders in Archive
-        return matchesSearch && o.status === 'ZATWIERDZONE';
-      } else if (activeView === 'dashboard' || activeView === 'list') {
-        // Show only NOT APPROVED in main views
-        return matchesSearch && o.status !== 'ZATWIERDZONE';
-      }
-      return matchesSearch;
+      const statusMatch = isArchiveView 
+        ? o.status === 'ZATWIERDZONE'
+        : (o.status !== 'ZATWIERDZONE');
+
+      return matchesSearch && statusMatch;
     });
   }, [zgloszenia, searchQuery, activeView]);
 
@@ -300,7 +290,7 @@ const App: React.FC = () => {
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={fetchZgloszenia} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Odśwież dane">
+            <button onClick={() => fetchZgloszenia()} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Odśwież dane">
               <Loader2 className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <button onClick={() => setActiveView('list')} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Zgłoszenia">
@@ -321,15 +311,15 @@ const App: React.FC = () => {
         <main className="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth">
           {activeView === 'dashboard' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-500">
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setActiveView('list')}>
                 <p className="text-slate-500 text-[10px] font-black uppercase mb-1 tracking-wider">Wszystkie zgłoszenia</p>
                 <p className="text-xl font-black">{stats.total}</p>
               </div>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setActiveView('list')}>
                 <p className="text-slate-500 text-[10px] font-black uppercase mb-1 tracking-wider">Niepotwierdzone</p>
                 <p className="text-xl font-black">{stats.pending}</p>
               </div>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={() => setActiveView('archive')}>
                 <p className="text-slate-500 text-[10px] font-black uppercase mb-1 tracking-wider">Archiwum</p>
                 <p className="text-xl font-black">{stats.archive}</p>
               </div>
@@ -376,14 +366,14 @@ const App: React.FC = () => {
                             <div className="flex gap-2">
                               {o.status !== 'ZATWIERDZONE' && (
                                 <button 
-                                  disabled={processingId === o.id.toString()}
-                                  onClick={() => handleZatwierdz(o.id)}
+                                  disabled={!!processingId}
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleZatwierdz(o.id); }}
                                   className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black disabled:opacity-50 hover:bg-emerald-700 transition-colors"
                                 >ZATWIERDŹ</button>
                               )}
                               <button 
-                                disabled={processingId === o.id.toString()}
-                                onClick={() => handleKasuj(o.id)}
+                                disabled={!!processingId}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleKasuj(o.id); }}
                                 className="px-4 py-2 bg-red-600 text-white rounded-lg text-[10px] font-black hover:bg-red-700 transition-colors"
                               >KASUJ</button>
                             </div>
@@ -470,7 +460,6 @@ const App: React.FC = () => {
                   </select>
                 </div>
                 
-                {/* QUANTITY FIELD: ONLY FOR OST */}
                 {newOrderForm.typ === 'OST' && (
                   <div className="space-y-1 animate-in slide-in-from-right-2 duration-200">
                     <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Ilość</label>
