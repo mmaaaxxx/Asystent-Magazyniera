@@ -60,6 +60,12 @@
             letter-spacing: 0.05em;
             text-transform: uppercase;
         }
+
+        /* Custom styles for html5-qrcode reader to look better */
+        #reader video {
+            border-radius: 12px;
+            object-fit: cover !important;
+        }
     </style>
 <script type="importmap">
 {
@@ -69,7 +75,8 @@
     "react/": "https://esm.sh/react@^19.2.3/",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "axios": "https://esm.sh/axios@^1.7.9"
+    "axios": "https://esm.sh/axios@^1.7.9",
+    "html5-qrcode": "https://esm.sh/html5-qrcode@^2.3.8"
   }
 }
 </script>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
   LayoutDashboard, 
@@ -18,8 +18,11 @@ import {
   AlertCircle,
   Info,
   History,
-  Hammer
+  Hammer,
+  ScanBarcode,
+  Camera
 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { Order, DashboardStats, OrderType } from './types';
 
 // --- API Endpoints ---
@@ -31,6 +34,85 @@ const API_URLS = {
 };
 
 // --- Components ---
+
+const BarcodeScanner: React.FC<{ 
+  onScan: (text: string) => void; 
+  onClose: () => void;
+  onError: (msg: string) => void;
+}> = ({ onScan, onClose, onError }) => {
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  useEffect(() => {
+    const scanner = new Html5Qrcode("reader");
+    scannerRef.current = scanner;
+
+    const startScanner = async () => {
+      try {
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0
+          },
+          (decodedText) => {
+            onScan(decodedText);
+            stopScanner();
+          },
+          () => {
+            // Failure is silent scanning
+          }
+        );
+      } catch (err) {
+        console.error("Scanner failed to start", err);
+        onError("Błąd kamery: Brak uprawnień lub urządzenie w użyciu.");
+      }
+    };
+
+    const stopScanner = async () => {
+      if (scannerRef.current && scannerRef.current.isScanning) {
+        try {
+          await scannerRef.current.stop();
+          scannerRef.current.clear();
+        } catch (e) {
+          console.error("Failed to stop scanner", e);
+        }
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      stopScanner();
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[5000] bg-black/90 flex flex-col items-center justify-center p-4">
+      <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-2xl border-2 border-blue-500/50 shadow-2xl">
+        <div id="reader" className="w-full h-full"></div>
+        {/* Visual corner markings for the targeting box */}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="w-[250px] h-[250px] border-2 border-white/50 rounded-lg"></div>
+        </div>
+      </div>
+      
+      <div className="mt-12 flex flex-col items-center gap-6">
+        <div className="text-white text-center">
+          <p className="font-bold text-sm tracking-widest uppercase mb-1">Skanowanie kodu</p>
+          <p className="text-xs text-white/60">Umieść kod EAN/QR wewnątrz ramki</p>
+        </div>
+        
+        <button 
+          onClick={onClose}
+          className="bg-white/10 hover:bg-white/20 text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest backdrop-blur-md transition-all border border-white/10"
+        >
+          Anuluj
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const Badge: React.FC<{ type: string; children: React.ReactNode }> = ({ type, children }) => {
   const styles: Record<string, string> = {
@@ -102,6 +184,7 @@ const App: React.FC = () => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   
   const [zgloszenia, setZgloszenia] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -165,7 +248,6 @@ const App: React.FC = () => {
   const handleZatwierdz = async (id: string | number) => {
     setProcessingId(id.toString());
     try {
-      // Use explicit Number casting for database compatibility
       const response = await axios.post(API_URLS.APPROVE_ORDER, { id: Number(id) });
       if (response.status >= 200 && response.status < 300) {
         setToast({ message: 'Zatwierdzono i zarchiwizowano zgłoszenie!', type: 'success' });
@@ -183,12 +265,11 @@ const App: React.FC = () => {
     console.log('Próba usunięcia ID:', id);
     setProcessingId(id.toString());
     try {
-      // Use explicit Number casting for database compatibility
       const response = await axios.post(API_URLS.DELETE_ORDER, { id: Number(id) });
       if (response.status >= 200 && response.status < 300) {
         setToast({ message: 'Zgłoszenie zostało usunięte z bazy danych.', type: 'success' });
         await fetchZgloszenia();
-        setExpandedRows(new Set()); // Automatic row collapse upon success
+        setExpandedRows(new Set());
       } else {
         throw new Error('Unexpected response status');
       }
@@ -252,6 +333,13 @@ const App: React.FC = () => {
     try {
       return new Date(dateStr).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     } catch { return dateStr; }
+  };
+
+  const handleScanSuccess = (code: string) => {
+    const cleanCode = code.toUpperCase();
+    setNewOrderForm(f => ({ ...f, referencja: cleanCode }));
+    setShowScanner(false);
+    setToast({ message: `Zeskanowano kod: ${cleanCode}`, type: 'success' });
   };
 
   return (
@@ -441,11 +529,21 @@ const App: React.FC = () => {
             <form onSubmit={handleAddNewOrder} className="space-y-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Referencja</label>
-                <input 
-                  type="text" required autoFocus placeholder="NP. 2M3390"
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                  value={newOrderForm.referencja} onChange={e => setNewOrderForm(f => ({ ...f, referencja: e.target.value }))}
-                />
+                <div className="flex gap-2">
+                  <input 
+                    type="text" required autoFocus placeholder="NP. 2M3390"
+                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                    value={newOrderForm.referencja} onChange={e => setNewOrderForm(f => ({ ...f, referencja: e.target.value }))}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => setShowScanner(true)}
+                    className="p-3 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors flex items-center justify-center"
+                    title="Skanuj kod"
+                  >
+                    <ScanBarcode className="w-5 h-5 text-slate-600" />
+                  </button>
+                </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -481,6 +579,14 @@ const App: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {showScanner && (
+        <BarcodeScanner 
+          onScan={handleScanSuccess}
+          onClose={() => setShowScanner(false)}
+          onError={(msg) => setToast({ message: msg, type: 'error' })}
+        />
       )}
 
       {toast && (
