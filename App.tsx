@@ -42,95 +42,104 @@ const BarcodeScanner: React.FC<{
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
-    const scanner = new Html5Qrcode("reader");
-    scannerRef.current = scanner;
-
-    const startScanner = async () => {
-      try {
-        const config = {
-          fps: 15,
-          qrbox: { width: 300, height: 150 },
-          aspectRatio: 1.0,
-          videoConstraints: {
-            facingMode: "environment",
-            focusMode: "continuous",
-            width: { min: 640, ideal: 1920, max: 2560 },
-            height: { min: 480, ideal: 1080, max: 1440 }
-          },
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
-          }
-        };
-
-        // Guideline: The first argument must have exactly 1 key if passed as an object.
-        await scanner.start(
-          { facingMode: "environment" },
-          config as any,
-          (decodedText) => {
-            onScan(decodedText);
-            stopScanner();
-          },
-          () => {
-            // Failure is silent scanning
-          }
-        );
-      } catch (err) {
-        console.error("Scanner failed to start", err);
-        onError("Błąd kamery: Brak uprawnień lub urządzenie w użyciu.");
+    const html5QrCode = new Html5Qrcode("reader");
+    scannerRef.current = html5QrCode;
+    
+    // 1. Scanner configuration with videoConstraints for HD and Focus
+    const config = { 
+      fps: 15,
+      qrbox: { width: 300, height: 150 }, // Rectangular frame ideal for EAN
+      aspectRatio: 1.0,
+      videoConstraints: {
+        facingMode: "environment",
+        focusMode: "continuous",
+        width: { min: 640, ideal: 1920, max: 3840 },
+        height: { min: 480, ideal: 1080, max: 2160 }
       }
     };
-
-    const stopScanner = async () => {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-        try {
-          await scannerRef.current.stop();
-          scannerRef.current.clear();
-        } catch (e) {
-          console.error("Failed to stop scanner", e);
-        }
+    
+    // 2. Start (exactly 1 key in the first argument for safety)
+    html5QrCode.start(
+      { facingMode: "environment" }, 
+      config as any,
+      (decodedText) => {
+        // Success
+        if (navigator.vibrate) navigator.vibrate(200);
+        html5QrCode.stop().then(() => {
+          onScan(decodedText);
+        }).catch(console.error);
+      },
+      () => {
+        // Ignore frame-by-frame errors
       }
-    };
-
-    startScanner();
+    ).catch(err => {
+      console.error("Błąd startu kamery:", err);
+      onError("Błąd kamery: Brak uprawnień lub urządzenie w użyciu.");
+    });
 
     return () => {
-      stopScanner();
+      if(html5QrCode.isScanning) {
+        html5QrCode.stop().catch(console.error);
+      }
     };
-  }, []);
+  }, [onScan, onError]);
 
   return (
-    <div className="fixed inset-0 z-[5000] bg-black/90 flex flex-col items-center justify-center p-4">
-      {/* Container for the camera preview */}
-      <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-2xl border-2 border-blue-500/50 shadow-2xl bg-black">
+    <div className="fixed inset-0 z-[5000] bg-black/95 flex flex-col items-center justify-center p-4 backdrop-blur-lg">
+      <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-3xl border-4 border-white/20 shadow-2xl bg-black">
         <div id="reader" className="w-full h-full rounded-2xl"></div>
         
         {/* Visual rectangular markings for the targeting box - Optimized for EAN (300x150) */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="w-[300px] h-[150px] border-2 border-white/70 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center">
+        <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+          <div className="w-[300px] h-[150px] border-2 border-blue-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] relative flex items-center justify-center">
              {/* Scanning line animation */}
-             <div className="w-full h-[1px] bg-red-500/50 shadow-[0_0_8px_red] animate-pulse"></div>
+             <div className="absolute w-full h-[2px] bg-blue-500 shadow-[0_0_15px_#3b82f6] animate-[scan_2s_infinite_ease-in-out]"></div>
+             
+             {/* Corner brackets for better focus feedback */}
+             <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-blue-400 rounded-tl-lg"></div>
+             <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-blue-400 rounded-tr-lg"></div>
+             <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-blue-400 rounded-bl-lg"></div>
+             <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-blue-400 rounded-br-lg"></div>
+          </div>
+          
+          <div className="mt-6 px-4 py-2 bg-blue-600/30 border border-blue-500/20 rounded-full backdrop-blur-md">
+            <p className="text-[10px] text-blue-200 font-black uppercase tracking-widest text-center">
+              Umieść kod wewnątrz ramki
+            </p>
           </div>
         </div>
       </div>
       
-      <div className="mt-12 flex flex-col items-center gap-6">
-        <div className="text-white text-center">
-          <p className="font-bold text-sm tracking-widest uppercase mb-1">Skanowanie kodu</p>
-          <p className="text-xs text-white/60 mb-3">Umieść kod wewnątrz ramki</p>
-          <div className="px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg animate-pulse">
-            <p className="text-[10px] text-blue-400 font-black uppercase tracking-wider">
-              Przybliż telefon, aby wyostrzyć małe kody
+      <div className="mt-12 flex flex-col items-center gap-8 w-full max-w-xs">
+        <div className="text-white text-center space-y-3">
+          <h2 className="font-black text-xl tracking-tight uppercase">Skaner Magazynowy</h2>
+          <div className="px-6 py-4 bg-white/5 border border-white/10 rounded-2xl shadow-inner">
+            <p className="text-xs text-white/70 font-bold leading-relaxed">
+              Przybliż telefon do kodu, aby wyostrzyć małe znaki. 
+              Skaner automatycznie rozpozna kody kreskowe Hager oraz QR.
             </p>
           </div>
         </div>
         
         <button 
           onClick={onClose}
-          className="bg-white/10 hover:bg-white/20 text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest backdrop-blur-md transition-all border border-white/10"
+          className="w-full bg-white/10 hover:bg-white/20 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest backdrop-blur-md transition-all border border-white/10 active:scale-95 flex items-center justify-center gap-2"
         >
-          Anuluj
+          <X className="w-4 h-4" /> Anuluj skanowanie
         </button>
       </div>
+
+      <style>{`
+        @keyframes scan {
+          0% { transform: translateY(-70px); opacity: 0; }
+          20% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { transform: translateY(70px); opacity: 0; }
+        }
+        #reader video {
+          object-fit: cover !important;
+        }
+      `}</style>
     </div>
   );
 };
