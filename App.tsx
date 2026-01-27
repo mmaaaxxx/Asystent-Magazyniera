@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
@@ -17,13 +18,11 @@ import {
   Loader2,
   AlertCircle,
   Info,
-  History,
   Hammer,
-  ScanBarcode,
-  Camera
+  ScanBarcode
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Order, DashboardStats, OrderType } from './types';
+import { Order, OrderType } from './types';
 
 // --- API Endpoints ---
 const API_URLS = {
@@ -48,13 +47,25 @@ const BarcodeScanner: React.FC<{
 
     const startScanner = async () => {
       try {
+        const config = {
+          fps: 15,
+          qrbox: { width: 300, height: 150 },
+          aspectRatio: 1.0,
+          videoConstraints: {
+            facingMode: "environment",
+            focusMode: "continuous",
+            width: { min: 640, ideal: 1920, max: 2560 },
+            height: { min: 480, ideal: 1080, max: 1440 }
+          },
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          }
+        };
+
+        // Guideline: The first argument must have exactly 1 key if passed as an object.
         await scanner.start(
           { facingMode: "environment" },
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0
-          },
+          config as any,
           (decodedText) => {
             onScan(decodedText);
             stopScanner();
@@ -89,18 +100,28 @@ const BarcodeScanner: React.FC<{
 
   return (
     <div className="fixed inset-0 z-[5000] bg-black/90 flex flex-col items-center justify-center p-4">
-      <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-2xl border-2 border-blue-500/50 shadow-2xl">
-        <div id="reader" className="w-full h-full"></div>
-        {/* Visual corner markings for the targeting box */}
+      {/* Container for the camera preview */}
+      <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-2xl border-2 border-blue-500/50 shadow-2xl bg-black">
+        <div id="reader" className="w-full h-full rounded-2xl"></div>
+        
+        {/* Visual rectangular markings for the targeting box - Optimized for EAN (300x150) */}
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="w-[250px] h-[250px] border-2 border-white/50 rounded-lg"></div>
+          <div className="w-[300px] h-[150px] border-2 border-white/70 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center">
+             {/* Scanning line animation */}
+             <div className="w-full h-[1px] bg-red-500/50 shadow-[0_0_8px_red] animate-pulse"></div>
+          </div>
         </div>
       </div>
       
       <div className="mt-12 flex flex-col items-center gap-6">
         <div className="text-white text-center">
           <p className="font-bold text-sm tracking-widest uppercase mb-1">Skanowanie kodu</p>
-          <p className="text-xs text-white/60">Umieść kod EAN/QR wewnątrz ramki</p>
+          <p className="text-xs text-white/60 mb-3">Umieść kod wewnątrz ramki</p>
+          <div className="px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg animate-pulse">
+            <p className="text-[10px] text-blue-400 font-black uppercase tracking-wider">
+              Przybliż telefon, aby wyostrzyć małe kody
+            </p>
+          </div>
         </div>
         
         <button 
