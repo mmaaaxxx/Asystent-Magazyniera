@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
@@ -24,7 +23,7 @@ import {
   ZapOff,
   ZoomIn
 } from 'lucide-react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import { Order, OrderType } from './types';
 
 // --- API Endpoints ---
@@ -53,33 +52,26 @@ const BarcodeScanner: React.FC<{
     const html5QrCode = new Html5Qrcode("reader");
     scannerRef.current = html5QrCode;
 
-    // Optimized configuration for dense EAN and small labels
+    // 'Safe Mode' configuration for maximum compatibility
     const config = { 
-      fps: 30, // High frame rate for faster recognition
+      fps: 10, // Reduced FPS to give CPU more time to process each frame (Quality > Speed)
       qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-        // Dynamic square targeting box (70% of the smallest dimension)
+        // Increased scanning area (85% of screen) for easier targeting
         const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-        const size = Math.floor(minEdge * 0.7);
+        const size = Math.floor(minEdge * 0.85);
         return { width: size, height: size };
       },
       aspectRatio: 1.0,
-      // Restriction to specific formats improves processing speed significantly
-      formatsToSupport: [ 
-        Html5QrcodeSupportedFormats.EAN_13, 
-        Html5QrcodeSupportedFormats.EAN_8, 
-        Html5QrcodeSupportedFormats.QR_CODE, 
-        Html5QrcodeSupportedFormats.CODE_128 
-      ],
+      // Removed formatsToSupport to allow all barcode types for maximum compatibility
       videoConstraints: {
         facingMode: "environment",
         focusMode: "continuous",
-        width: { ideal: 1920 }, // Prefer Full HD for detail
-        height: { ideal: 1080 },
-        frameRate: 30 // Constant 30 FPS for stability
+        width: { ideal: 1280 }, 
+        height: { ideal: 720 }
       },
       experimentalFeatures: {
-        // Essential: Uses Apple/Android native barcode engines if available
-        useBarCodeDetectorIfSupported: true
+        // Disabled native engine for broader compatibility as requested
+        useBarCodeDetectorIfSupported: false
       },
       rememberLastUsedCamera: true
     };
@@ -176,9 +168,9 @@ const BarcodeScanner: React.FC<{
       <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-3xl border-2 border-white/10 shadow-2xl bg-black">
         <div id="reader" className="w-full h-full rounded-2xl"></div>
         
-        {/* Targeting overlay based on config (dynamic) */}
+        {/* Targeting overlay based on config (dynamic 85%) */}
         <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-          <div className="w-[70%] h-[70%] border-2 border-blue-400 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] relative flex items-center justify-center">
+          <div className="w-[85%] h-[85%] border-2 border-blue-400 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] relative flex items-center justify-center">
              <div className="absolute w-full h-[2px] bg-blue-500 shadow-[0_0_15px_#3b82f6] animate-[scan_2s_infinite_ease-in-out]"></div>
              
              {/* Corner brackets */}
@@ -224,7 +216,7 @@ const BarcodeScanner: React.FC<{
         <div className="text-white text-center space-y-2">
           <h2 className="font-black text-lg tracking-tight uppercase">Skanowanie...</h2>
           <p className="text-[11px] text-white/50 leading-relaxed px-4 italic">
-            Jeśli kod jest mały, użyj suwaka powyżej. Skaner rozpoznaje <span className="text-blue-400 font-bold">EAN oraz QR</span>.
+            Jeśli kod jest mały, użyj suwaka powyżej. Skaner rozpoznaje <span className="text-blue-400 font-bold">Wszystkie rodzaje kodów</span>.
           </p>
         </div>
         
@@ -238,10 +230,10 @@ const BarcodeScanner: React.FC<{
 
       <style>{`
         @keyframes scan {
-          0% { transform: translateY(-80px); opacity: 0; }
+          0% { transform: translateY(-110px); opacity: 0; }
           20% { opacity: 1; }
           80% { opacity: 1; }
-          100% { transform: translateY(80px); opacity: 0; }
+          100% { transform: translateY(110px); opacity: 0; }
         }
         #reader video {
           object-fit: cover !important;
