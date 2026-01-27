@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
@@ -23,7 +24,7 @@ import {
   ZapOff,
   ZoomIn
 } from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Order, OrderType } from './types';
 
 // --- API Endpoints ---
@@ -52,16 +53,35 @@ const BarcodeScanner: React.FC<{
     const html5QrCode = new Html5Qrcode("reader");
     scannerRef.current = html5QrCode;
 
+    // Optimized configuration for dense EAN and small labels
     const config = { 
-      fps: 20, 
-      qrbox: { width: 250, height: 250 },
+      fps: 30, // High frame rate for faster recognition
+      qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+        // Dynamic square targeting box (70% of the smallest dimension)
+        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+        const size = Math.floor(minEdge * 0.7);
+        return { width: size, height: size };
+      },
       aspectRatio: 1.0,
+      // Restriction to specific formats improves processing speed significantly
+      formatsToSupport: [ 
+        Html5QrcodeSupportedFormats.EAN_13, 
+        Html5QrcodeSupportedFormats.EAN_8, 
+        Html5QrcodeSupportedFormats.QR_CODE, 
+        Html5QrcodeSupportedFormats.CODE_128 
+      ],
       videoConstraints: {
         facingMode: "environment",
         focusMode: "continuous",
-        width: { min: 640, ideal: 1920, max: 3840 },
-        height: { min: 480, ideal: 1080, max: 2160 }
-      }
+        width: { ideal: 1920 }, // Prefer Full HD for detail
+        height: { ideal: 1080 },
+        frameRate: 30 // Constant 30 FPS for stability
+      },
+      experimentalFeatures: {
+        // Essential: Uses Apple/Android native barcode engines if available
+        useBarCodeDetectorIfSupported: true
+      },
+      rememberLastUsedCamera: true
     };
 
     html5QrCode.start(
@@ -95,8 +115,6 @@ const BarcodeScanner: React.FC<{
             min: caps.zoomFeature().min(),
             max: caps.zoomFeature().max()
           });
-          // Fix: 'current' property does not exist on RangeCameraCapability. 
-          // Initialize zoom to the minimum supported value.
           setZoom(caps.zoomFeature().min());
         }
 
@@ -110,7 +128,7 @@ const BarcodeScanner: React.FC<{
     })
     .catch(err => {
       console.error("Błąd startu kamery:", err);
-      // Handle the play() request interrupted error specifically if possible
+      // Avoid reporting error if it's just a common cleanup race condition
       if (!err.toString().includes("interrupted by the media being removed")) {
         onError("Błąd kamery: Brak uprawnień lub urządzenie w użyciu.");
       }
@@ -120,7 +138,6 @@ const BarcodeScanner: React.FC<{
       if (html5QrCode.isScanning) {
         html5QrCode.stop().catch(err => console.warn("Cleanup stop error", err));
       }
-      // Ensure element is cleared from library cache
       try {
         html5QrCode.clear();
       } catch (e) {
@@ -159,9 +176,9 @@ const BarcodeScanner: React.FC<{
       <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-3xl border-2 border-white/10 shadow-2xl bg-black">
         <div id="reader" className="w-full h-full rounded-2xl"></div>
         
-        {/* Universal targeting box - 250x250 */}
+        {/* Targeting overlay based on config (dynamic) */}
         <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-          <div className="w-[250px] h-[250px] border-2 border-blue-400 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] relative flex items-center justify-center">
+          <div className="w-[70%] h-[70%] border-2 border-blue-400 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] relative flex items-center justify-center">
              <div className="absolute w-full h-[2px] bg-blue-500 shadow-[0_0_15px_#3b82f6] animate-[scan_2s_infinite_ease-in-out]"></div>
              
              {/* Corner brackets */}
@@ -221,10 +238,10 @@ const BarcodeScanner: React.FC<{
 
       <style>{`
         @keyframes scan {
-          0% { transform: translateY(-120px); opacity: 0; }
+          0% { transform: translateY(-80px); opacity: 0; }
           20% { opacity: 1; }
           80% { opacity: 1; }
-          100% { transform: translateY(120px); opacity: 0; }
+          100% { transform: translateY(80px); opacity: 0; }
         }
         #reader video {
           object-fit: cover !important;
