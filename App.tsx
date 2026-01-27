@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
@@ -19,7 +18,10 @@ import {
   AlertCircle,
   Info,
   Hammer,
-  ScanBarcode
+  ScanBarcode,
+  Zap,
+  ZapOff,
+  ZoomIn
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Order, OrderType } from './types';
@@ -39,16 +41,20 @@ const BarcodeScanner: React.FC<{
   onClose: () => void;
   onError: (msg: string) => void;
 }> = ({ onScan, onClose, onError }) => {
+  const [zoom, setZoom] = useState(1);
+  const [zoomCap, setZoomCap] = useState<{min: number, max: number} | null>(null);
+  const [isTorchOn, setIsTorchOn] = useState(false);
+  const [hasTorch, setHasTorch] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
+    // Unique ID for the reader instance to avoid conflicts
     const html5QrCode = new Html5Qrcode("reader");
     scannerRef.current = html5QrCode;
-    
-    // 1. Scanner configuration with videoConstraints for HD and Focus
+
     const config = { 
-      fps: 15,
-      qrbox: { width: 300, height: 150 }, // Rectangular frame ideal for EAN
+      fps: 20, 
+      qrbox: { width: 250, height: 250 },
       aspectRatio: 1.0,
       videoConstraints: {
         facingMode: "environment",
@@ -57,87 +63,182 @@ const BarcodeScanner: React.FC<{
         height: { min: 480, ideal: 1080, max: 2160 }
       }
     };
-    
-    // 2. Start (exactly 1 key in the first argument for safety)
+
     html5QrCode.start(
       { facingMode: "environment" }, 
       config as any,
       (decodedText) => {
-        // Success
         if (navigator.vibrate) navigator.vibrate(200);
-        html5QrCode.stop().then(() => {
-          onScan(decodedText);
-        }).catch(console.error);
+        // Stop and clear before returning result
+        if (html5QrCode.isScanning) {
+          html5QrCode.stop().then(() => {
+            html5QrCode.clear();
+            onScan(decodedText);
+          }).catch(err => {
+            console.warn("Stop failed", err);
+            onScan(decodedText); // Still return text even if stop fails
+          });
+        }
       },
       () => {
-        // Ignore frame-by-frame errors
+        // Frame processing errors ignored
       }
-    ).catch(err => {
+    )
+    .then(() => {
+      // Key: Access capabilities ONLY after camera has successfully started
+      try {
+        const caps = html5QrCode.getRunningTrackCameraCapabilities();
+        
+        // Zoom check
+        if (caps.zoomFeature().isSupported()) {
+          setZoomCap({
+            min: caps.zoomFeature().min(),
+            max: caps.zoomFeature().max()
+          });
+          // Fix: 'current' property does not exist on RangeCameraCapability. 
+          // Initialize zoom to the minimum supported value.
+          setZoom(caps.zoomFeature().min());
+        }
+
+        // Torch check
+        if (caps.torchFeature().isSupported()) {
+          setHasTorch(true);
+        }
+      } catch (e) {
+        console.log("Capabilities not supported or API error", e);
+      }
+    })
+    .catch(err => {
       console.error("Błąd startu kamery:", err);
-      onError("Błąd kamery: Brak uprawnień lub urządzenie w użyciu.");
+      // Handle the play() request interrupted error specifically if possible
+      if (!err.toString().includes("interrupted by the media being removed")) {
+        onError("Błąd kamery: Brak uprawnień lub urządzenie w użyciu.");
+      }
     });
 
     return () => {
-      if(html5QrCode.isScanning) {
-        html5QrCode.stop().catch(console.error);
+      if (html5QrCode.isScanning) {
+        html5QrCode.stop().catch(err => console.warn("Cleanup stop error", err));
+      }
+      // Ensure element is cleared from library cache
+      try {
+        html5QrCode.clear();
+      } catch (e) {
+        // Ignore clear errors during unmount
       }
     };
   }, [onScan, onError]);
 
+  const handleZoomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newZoom = Number(e.target.value);
+    setZoom(newZoom);
+    if (scannerRef.current && scannerRef.current.isScanning) {
+      scannerRef.current.applyVideoConstraints({
+        advanced: [{ zoom: newZoom }]
+      } as any).catch(err => {
+        console.warn("Failed to apply zoom", err);
+      });
+    }
+  };
+
+  const handleTorchToggle = async () => {
+    if (!scannerRef.current || !scannerRef.current.isScanning) return;
+    try {
+      const newState = !isTorchOn;
+      await scannerRef.current.applyVideoConstraints({
+        advanced: [{ torch: newState }]
+      } as any);
+      setIsTorchOn(newState);
+    } catch (err) {
+      console.error("Failed to toggle torch", err);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[5000] bg-black/95 flex flex-col items-center justify-center p-4 backdrop-blur-lg">
-      <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-3xl border-4 border-white/20 shadow-2xl bg-black">
+    <div className="fixed inset-0 z-[5000] bg-black/95 flex flex-col items-center justify-center p-4 backdrop-blur-md">
+      <div className="relative w-full max-w-sm aspect-square overflow-hidden rounded-3xl border-2 border-white/10 shadow-2xl bg-black">
         <div id="reader" className="w-full h-full rounded-2xl"></div>
         
-        {/* Visual rectangular markings for the targeting box - Optimized for EAN (300x150) */}
+        {/* Universal targeting box - 250x250 */}
         <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-          <div className="w-[300px] h-[150px] border-2 border-blue-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] relative flex items-center justify-center">
-             {/* Scanning line animation */}
+          <div className="w-[250px] h-[250px] border-2 border-blue-400 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] relative flex items-center justify-center">
              <div className="absolute w-full h-[2px] bg-blue-500 shadow-[0_0_15px_#3b82f6] animate-[scan_2s_infinite_ease-in-out]"></div>
              
-             {/* Corner brackets for better focus feedback */}
-             <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-blue-400 rounded-tl-lg"></div>
-             <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-blue-400 rounded-tr-lg"></div>
-             <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-blue-400 rounded-bl-lg"></div>
-             <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-blue-400 rounded-br-lg"></div>
-          </div>
-          
-          <div className="mt-6 px-4 py-2 bg-blue-600/30 border border-blue-500/20 rounded-full backdrop-blur-md">
-            <p className="text-[10px] text-blue-200 font-black uppercase tracking-widest text-center">
-              Umieść kod wewnątrz ramki
-            </p>
+             {/* Corner brackets */}
+             <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-blue-400 rounded-tl-xl"></div>
+             <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-blue-400 rounded-tr-xl"></div>
+             <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-blue-400 rounded-bl-xl"></div>
+             <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-blue-400 rounded-br-xl"></div>
           </div>
         </div>
+
+        {/* Torch Button */}
+        {hasTorch && (
+          <button 
+            onClick={handleTorchToggle}
+            className={`absolute top-4 right-4 p-3 rounded-full backdrop-blur-md transition-all z-10 ${isTorchOn ? 'bg-yellow-400 text-black' : 'bg-white/10 text-white border border-white/20'}`}
+          >
+            {isTorchOn ? <Zap className="w-6 h-6" /> : <ZapOff className="w-6 h-6" />}
+          </button>
+        )}
       </div>
       
-      <div className="mt-12 flex flex-col items-center gap-8 w-full max-w-xs">
-        <div className="text-white text-center space-y-3">
-          <h2 className="font-black text-xl tracking-tight uppercase">Skaner Magazynowy</h2>
-          <div className="px-6 py-4 bg-white/5 border border-white/10 rounded-2xl shadow-inner">
-            <p className="text-xs text-white/70 font-bold leading-relaxed">
-              Przybliż telefon do kodu, aby wyostrzyć małe znaki. 
-              Skaner automatycznie rozpozna kody kreskowe Hager oraz QR.
-            </p>
+      {/* Zoom Control */}
+      {zoomCap && (
+        <div className="w-full max-w-sm px-4 mt-8 flex flex-col gap-3">
+          <div className="flex justify-between text-slate-400 text-[10px] font-bold mb-1 uppercase tracking-widest">
+              <span>Oddal</span>
+              <span className="text-white flex items-center gap-1"><ZoomIn className="w-3 h-3" /> Zoom ({zoom.toFixed(1)}x)</span>
+              <span>Przybliż</span>
           </div>
+          <input 
+            type="range" 
+            min={zoomCap.min} 
+            max={zoomCap.max} 
+            step="0.1" 
+            value={zoom}
+            onChange={handleZoomChange}
+            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+          />
+        </div>
+      )}
+
+      <div className="mt-8 flex flex-col items-center gap-6 w-full max-w-xs">
+        <div className="text-white text-center space-y-2">
+          <h2 className="font-black text-lg tracking-tight uppercase">Skanowanie...</h2>
+          <p className="text-[11px] text-white/50 leading-relaxed px-4 italic">
+            Jeśli kod jest mały, użyj suwaka powyżej. Skaner rozpoznaje <span className="text-blue-400 font-bold">EAN oraz QR</span>.
+          </p>
         </div>
         
         <button 
           onClick={onClose}
-          className="w-full bg-white/10 hover:bg-white/20 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-widest backdrop-blur-md transition-all border border-white/10 active:scale-95 flex items-center justify-center gap-2"
+          className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest border border-slate-700 active:scale-95 transition-transform flex items-center justify-center gap-2"
         >
-          <X className="w-4 h-4" /> Anuluj skanowanie
+          <X className="w-4 h-4" /> Anuluj
         </button>
       </div>
 
       <style>{`
         @keyframes scan {
-          0% { transform: translateY(-70px); opacity: 0; }
+          0% { transform: translateY(-120px); opacity: 0; }
           20% { opacity: 1; }
           80% { opacity: 1; }
-          100% { transform: translateY(70px); opacity: 0; }
+          100% { transform: translateY(120px); opacity: 0; }
         }
         #reader video {
           object-fit: cover !important;
+        }
+        input[type='range']::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 24px;
+          height: 24px;
+          background: #3b82f6;
+          border-radius: 50%;
+          cursor: pointer;
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+          border: 2px solid white;
         }
       `}</style>
     </div>
