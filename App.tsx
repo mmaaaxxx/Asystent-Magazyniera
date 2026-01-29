@@ -21,7 +21,8 @@ import {
   ScanBarcode,
   Zap,
   ZapOff,
-  ZoomIn
+  ZoomIn,
+  Camera
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Order, OrderType } from './types';
@@ -31,7 +32,8 @@ const API_URLS = {
   GET_ORDERS: 'https://n8n.maxcore.dev/webhook/pobierz-zgloszenia',
   APPROVE_ORDER: 'https://n8n.maxcore.dev/webhook/zatwierdz-zgloszenie',
   DELETE_ORDER: 'https://n8n.maxcore.dev/webhook/kasuj-zgloszenie',
-  ADD_ORDER: 'https://n8n.maxcore.dev/webhook/dodaj-zgloszenie'
+  ADD_ORDER: 'https://n8n.maxcore.dev/webhook/dodaj-zgloszenie',
+  OCR_ANALYZE: 'https://n8n.maxcore.dev/webhook/ocr-analiza'
 };
 
 // --- Components ---
@@ -325,6 +327,7 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
   
   const [zgloszenia, setZgloszenia] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -332,6 +335,8 @@ const App: React.FC = () => {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form State
   const [newOrderForm, setNewOrderForm] = useState({
@@ -442,6 +447,34 @@ const App: React.FC = () => {
       console.error('Add error:', error);
     } finally {
       setIsAdding(false);
+    }
+  };
+
+  const handleAIPhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsAnalyzingAI(true);
+    const formData = new FormData();
+    formData.append('data', file);
+
+    try {
+      const response = await axios.post(API_URLS.OCR_ANALYZE, formData);
+      const result = response.data?.text;
+
+      if (result && result !== 'BRAK') {
+        const cleanCode = result.toUpperCase().trim();
+        setNewOrderForm(f => ({ ...f, referencja: cleanCode }));
+        setToast({ message: `AI odczytało kod: ${cleanCode}`, type: 'success' });
+      } else {
+        setToast({ message: 'AI nie rozpoznało tekstu.', type: 'error' });
+      }
+    } catch (error) {
+      console.error('OCR analysis failed:', error);
+      setToast({ message: 'Błąd podczas analizy AI.', type: 'error' });
+    } finally {
+      setIsAnalyzingAI(false);
+      if (e.target) e.target.value = ''; // Reset input to allow selecting same file
     }
   };
 
@@ -683,7 +716,31 @@ const App: React.FC = () => {
                   >
                     <ScanBarcode className="w-5 h-5 text-slate-600" />
                   </button>
+                  <button 
+                    type="button" 
+                    disabled={isAnalyzingAI}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-3 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors flex items-center justify-center"
+                    title="AI Foto Skaner (OCR)"
+                  >
+                    {isAnalyzingAI ? (
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                    ) : (
+                      <Camera className="w-5 h-5 text-slate-600" />
+                    )}
+                  </button>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept="image/*" 
+                    capture="environment" 
+                    onChange={handleAIPhotoSelect} 
+                  />
                 </div>
+                {isAnalyzingAI && (
+                  <p className="text-[10px] text-blue-600 font-bold animate-pulse mt-1 ml-1">AI analizuje zdjęcie...</p>
+                )}
               </div>
               
               <div className="grid grid-cols-2 gap-4">
