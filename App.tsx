@@ -460,8 +460,19 @@ const App: React.FC = () => {
 
     try {
       const response = await axios.post(API_URLS.OCR_ANALYZE, formData);
-      // Correct extraction logic for both array and object formats from n8n
-      const result = Array.isArray(response.data) ? response.data[0]?.text : response.data?.text;
+      console.log('AI Response:', response.data);
+
+      // 1. Sprawdź czy dane są owinięte w .data (częste w axios/n8n)
+      let rawData = response.data;
+      if (rawData && !Array.isArray(rawData) && Array.isArray(rawData.data)) {
+        rawData = rawData.data;
+      }
+
+      // 2. Pobierz pierwszy element jeśli to tablica
+      const item = Array.isArray(rawData) ? rawData[0] : rawData;
+
+      // 3. Wyciągnij tekst sprawdzając zarówno bezpośrednie pole, jak i strukturę .json (n8n standard)
+      const result = item?.json?.text || item?.text;
 
       if (result && result !== 'BRAK') {
         const cleanCode = result.toUpperCase().trim();
