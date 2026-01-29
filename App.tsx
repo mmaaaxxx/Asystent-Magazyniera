@@ -462,17 +462,23 @@ const App: React.FC = () => {
       const response = await axios.post(API_URLS.OCR_ANALYZE, formData);
       console.log('AI Response:', response.data);
 
-      // 1. Sprawdź czy dane są owinięte w .data (częste w axios/n8n)
-      let rawData = response.data;
-      if (rawData && !Array.isArray(rawData) && Array.isArray(rawData.data)) {
-        rawData = rawData.data;
+      // Pobierz dane z axios
+      let data = response.data;
+      
+      // Jeśli axios nie sparsował JSONa (bo np. n8n wysłało go jako text), zrób to ręcznie
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          console.error('Parse error', e);
+        }
       }
 
-      // 2. Pobierz pierwszy element jeśli to tablica
-      const item = Array.isArray(rawData) ? rawData[0] : rawData;
+      // Wyciągnij pierwszy element jeśli to tablica
+      const item = Array.isArray(data) ? data[0] : data;
 
-      // 3. Wyciągnij tekst sprawdzając zarówno bezpośrednie pole, jak i strukturę .json (n8n standard)
-      const result = item?.json?.text || item?.text;
+      // Wyciągnij tekst (sprawdzając różne możliwe ścieżki n8n)
+      const result = item?.json?.text || item?.text || (typeof item === 'string' ? item : null);
 
       if (result && result !== 'BRAK') {
         const cleanCode = result.toUpperCase().trim();
