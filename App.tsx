@@ -460,7 +460,8 @@ const App: React.FC = () => {
 
     try {
       const response = await axios.post(API_URLS.OCR_ANALYZE, formData);
-      const result = response.data?.text;
+      // Correct extraction logic for both array and object formats from n8n
+      const result = Array.isArray(response.data) ? response.data[0]?.text : response.data?.text;
 
       if (result && result !== 'BRAK') {
         const cleanCode = result.toUpperCase().trim();
