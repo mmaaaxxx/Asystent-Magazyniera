@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true, // To pozwala na dostęp z sieci (iPhone)
       port: 5173,
+      allowedHosts: ['192.168.0.103.nip.io'],
       watch: {
         usePolling: true, // To pozwala na wykrywanie zmian przez SMB/Windows
       },
